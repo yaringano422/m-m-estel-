@@ -50,6 +50,10 @@ export const useAuthStore = create<AuthState>((set) => ({
           firstName: profile.first_name,
           lastName: profile.last_name,
           role: profile.role,
+          // 🛠️ Mapeo de propiedades faltantes según tu tipo User
+          branchId: profile.branch_id,
+          isActive: profile.is_active,
+          createdAt: profile.created_at,
         },
         token: session.access_token,
         isAuthenticated: true,
@@ -110,6 +114,10 @@ export const useAuthStore = create<AuthState>((set) => ({
           firstName: profile.first_name,
           lastName: profile.last_name,
           role: profile.role,
+          // 🛠️ Mapeo de propiedades faltantes según tu tipo User
+          branchId: profile.branch_id,
+          isActive: profile.is_active,
+          createdAt: profile.created_at,
         },
         token: session.access_token,
         isAuthenticated: true,

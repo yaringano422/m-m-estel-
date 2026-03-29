@@ -129,3 +129,4 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
   },
 }));
+//aqui se maneja toda la lógica de autenticación, incluyendo login, logout y verificación de sesión. Se utiliza Supabase para manejar la autenticación y el almacenamiento de perfiles de usuario.

@@ -1,111 +1,234 @@
-import { useEffect, useState } from 'react';
-import { ordersApi } from '../api/endpoints';
-import type { Order } from '../types';
-import { Search, Receipt, Clock, CheckCircle, XCircle, Eye, X, DollarSign } from 'lucide-react';
-import clsx from 'clsx';
-import toast from 'react-hot-toast';
+import { supabase } from "../supabaseClient";
+import { useEffect, useState } from "react";
+import { ordersApi } from "../api/endpoints";
+import type { Order } from "../types";
+import {
+  Search,
+  Receipt,
+  Clock,
+  CheckCircle,
+  XCircle,
+  Eye,
+  X,
+  DollarSign,
+} from "lucide-react";
+import clsx from "clsx";
+import toast from "react-hot-toast";
 
-const STATUS_CONFIG: Record<string, { label: string; badge: string; icon: any }> = {
-  open: { label: 'Abierta', badge: 'badge-info', icon: Clock },
-  in_progress: { label: 'En progreso', badge: 'badge-warning', icon: Clock },
-  ready: { label: 'Lista', badge: 'badge-success', icon: CheckCircle },
-  delivered: { label: 'Entregada', badge: 'badge-success', icon: CheckCircle },
-  paid: { label: 'Pagada', badge: 'badge-success', icon: DollarSign },
-  cancelled: { label: 'Cancelada', badge: 'badge-danger', icon: XCircle },
+const STATUS_CONFIG: Record<
+  string,
+  { label: string; badge: string; icon: any }
+> = {
+  open: { label: "Abierta", badge: "badge-info", icon: Clock },
+  in_progress: { label: "En progreso", badge: "badge-warning", icon: Clock },
+  delivered: { label: "Entregada", badge: "badge-success", icon: CheckCircle },
+  paid: { label: "Pagada", badge: "badge-success", icon: DollarSign },
+  cancelled: { label: "Cancelada", badge: "badge-danger", icon: XCircle },
 };
 
 export default function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState<string | null>(null);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => { loadData(); }, []);
+  // Estados para el flujo de pago (Movidos al nivel superior)
+  const [showPayment, setShowPayment] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<"cash" | "card" | "mixed">(
+    "cash",
+  );
+  const [cashReceived, setCashReceived] = useState("");
+
+  useEffect(() => {
+    loadData();
+  }, []);
 
   const loadData = async () => {
     try {
-      const { data } = await ordersApi.getAll();
-      setOrders(data);
-    } catch {
-      setOrders([
-        { id: 'o1', orderNumber: 42, tableNumber: 2, tableName: 'Mesa 2', waiterName: 'Carlos López', status: 'in_progress', subtotal: 585.34, taxAmount: 93.65, discountAmount: 0, tipAmount: 0, total: 678.99, customerName: 'Juan Pérez', customerCount: 2, items: [
-          { id: 'oi1', productId: 'p4', productName: 'Tacos al Pastor', quantity: 2, unitPrice: 160, taxRate: 16, taxAmount: 51.2, subtotal: 320, total: 371.2, status: 'pending', variants: [] },
-          { id: 'oi2', productId: 'p12', productName: 'Margarita', quantity: 2, unitPrice: 120, taxRate: 16, taxAmount: 38.4, subtotal: 240, total: 278.4, status: 'pending', variants: [] },
-        ], createdAt: '2026-02-16T19:30:00Z' },
-        { id: 'o2', orderNumber: 43, tableNumber: 4, tableName: 'Mesa 4', waiterName: 'Carlos López', status: 'delivered', subtotal: 1077.59, taxAmount: 172.41, discountAmount: 0, tipAmount: 0, total: 1250, customerName: 'Familia Rodríguez', customerCount: 4, items: [
-          { id: 'oi3', productId: 'p6', productName: 'Arrachera', quantity: 2, unitPrice: 280, taxRate: 16, taxAmount: 89.6, subtotal: 560, total: 649.6, status: 'pending', variants: [] },
-          { id: 'oi4', productId: 'p1', productName: 'Guacamole con Totopos', quantity: 2, unitPrice: 120, taxRate: 16, taxAmount: 38.4, subtotal: 240, total: 278.4, status: 'pending', variants: [] },
-        ], createdAt: '2026-02-16T18:45:00Z' },
-        { id: 'o3', orderNumber: 44, tableNumber: 8, tableName: 'Mesa 8', waiterName: 'Maria García', status: 'open', subtotal: 293.10, taxAmount: 46.90, discountAmount: 0, tipAmount: 0, total: 340, customerCount: 1, items: [
-          { id: 'oi5', productId: 'p7', productName: 'Salmón a la Plancha', quantity: 1, unitPrice: 320, taxRate: 16, taxAmount: 51.2, subtotal: 320, total: 371.2, status: 'pending', variants: [] },
-        ], createdAt: '2026-02-16T20:00:00Z' },
-        { id: 'o4', orderNumber: 41, status: 'paid', subtotal: 475, taxAmount: 76, discountAmount: 0, tipAmount: 50, total: 601, paymentMethod: 'card', customerName: 'Ana López', customerCount: 2, items: [], createdAt: '2026-02-16T14:20:00Z', paidAt: '2026-02-16T15:30:00Z' },
-        { id: 'o5', orderNumber: 40, status: 'paid', subtotal: 890, taxAmount: 142.4, discountAmount: 50, tipAmount: 100, total: 1082.4, paymentMethod: 'cash', customerName: 'Roberto Díaz', customerCount: 3, items: [], createdAt: '2026-02-16T13:00:00Z', paidAt: '2026-02-16T14:15:00Z' },
-      ]);
-    } finally { setLoading(false); }
+      const { data, error } = await supabase
+        .from("orders")
+        .select(`*, order_items (*)`)
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+
+      const mapped = data.map((o: any) => ({
+        id: o.id,
+        orderNumber: o.order_number,
+        status: o.status,
+        subtotal: o.subtotal,
+        taxAmount: o.tax_amount,
+        discountAmount: o.discount_amount,
+        tipAmount: o.tip_amount || 0,
+        total: o.total,
+        paymentMethod: o.payment_method,
+        customerName: o.customer_name,
+        customerCount: o.customer_count,
+        createdAt: o.created_at,
+        paidAt: o.paid_at,
+        items: (o.order_items || []).map((i: any) => ({
+          id: i.id,
+          productId: i.product_id,
+          productName: i.product_name,
+          quantity: i.quantity,
+          unitPrice: i.unit_price,
+          taxRate: i.tax_rate,
+          taxAmount: i.tax_amount,
+          subtotal: i.subtotal,
+          total: i.total,
+          status: i.status || "pending",
+          variants: [],
+        })),
+      }));
+
+      setOrders(mapped);
+    } catch (error) {
+      console.error("Error cargando órdenes:", error);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const filtered = orders.filter(o => {
-    const matchesSearch = !search || `#${o.orderNumber} ${o.customerName || ''} ${o.tableName || ''}`.toLowerCase().includes(search.toLowerCase());
+  const handleConfirmPayment = async () => {
+    if (!selectedOrder) return;
+
+    try {
+      const now = new Date().toISOString();
+      const received = parseFloat(cashReceived);
+      const change =
+        paymentMethod === "cash" ? received - selectedOrder.total : null;
+
+      const { error } = await supabase
+        .from("orders")
+        .update({
+          status: "paid",
+          payment_method: paymentMethod,
+          cash_received: paymentMethod === "cash" ? received : null,
+          change_amount: change,
+          paid_at: now,
+        })
+        .eq("id", selectedOrder.id);
+
+      if (error) throw error;
+
+      toast.success("Pago realizado correctamente");
+      setShowPayment(false);
+      setSelectedOrder(null);
+      setCashReceived("");
+      loadData();
+    } catch (err: any) {
+      console.error(err.message);
+      toast.error("Error al pagar");
+    }
+  };
+
+  const updateOrderStatus = async (orderId: string, status: string) => {
+    try {
+      const { error } = await supabase
+        .from("orders")
+        .update({ status })
+        .eq("id", orderId);
+
+      if (error) throw error;
+
+      toast.success("Estado actualizado");
+      loadData();
+    } catch (error: any) {
+      console.error(error.message);
+      toast.error("Error al actualizar estado");
+    }
+  };
+
+  const filtered = orders.filter((o) => {
+    const matchesSearch =
+      !search ||
+      `#${o.orderNumber} ${o.customerName || ""} ${o.tableName || ""}`
+        .toLowerCase()
+        .includes(search.toLowerCase());
     const matchesStatus = !filterStatus || o.status === filterStatus;
     return matchesSearch && matchesStatus;
   });
 
-  const formatCurrency = (n: number) => `$${n.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`;
-  const formatTime = (date: string) => new Date(date).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
+  const formatCurrency = (n: number) =>
+    `$${n.toLocaleString("es-MX", { minimumFractionDigits: 2 })}`;
+
+  const formatTime = (date: string) =>
+    new Date(date).toLocaleTimeString("es-MX", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
 
   if (loading) {
-    return <div className="flex items-center justify-center h-[60vh]"><div className="animate-pulse-soft text-brand-400 text-lg">Cargando...</div></div>;
+    return (
+      <div className="flex items-center justify-center h-[60vh]">
+        <div className="animate-pulse-soft text-brand-400 text-lg">
+          Cargando...
+        </div>
+      </div>
+    );
   }
 
   return (
     <div className="space-y-6 animate-fade-in">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Órdenes</h1>
-          <p className="text-dark-400 text-sm mt-1">{orders.length} órdenes hoy</p>
+          <p className="text-dark-400 text-sm mt-1">
+            {orders.length} órdenes hoy
+          </p>
         </div>
       </div>
 
-      {/* Status filters */}
+      {/* Filters */}
       <div className="flex gap-2 flex-wrap">
         <button
           onClick={() => setFilterStatus(null)}
-          className={clsx('px-4 py-2 rounded-xl text-sm font-medium transition-all',
-            !filterStatus ? 'bg-brand-600 text-white' : 'bg-dark-800 text-dark-300 hover:bg-dark-700'
+          className={clsx(
+            "px-4 py-2 rounded-xl text-sm font-medium transition-all",
+            !filterStatus
+              ? "bg-brand-600 text-white"
+              : "bg-dark-800 text-dark-300 hover:bg-dark-700",
           )}
         >
           Todas ({orders.length})
         </button>
-        {Object.entries(STATUS_CONFIG).map(([key, config]) => {
-          const count = orders.filter(o => o.status === key).length;
-          if (count === 0) return null;
-          return (
-            <button
-              key={key}
-              onClick={() => setFilterStatus(key)}
-              className={clsx('px-4 py-2 rounded-xl text-sm font-medium transition-all',
-                filterStatus === key ? 'bg-brand-600 text-white' : 'bg-dark-800 text-dark-300 hover:bg-dark-700'
-              )}
-            >
-              {config.label} ({count})
-            </button>
-          );
-        })}
+        {Object.entries(STATUS_CONFIG).map(([key, config]) => (
+          <button
+            key={key}
+            onClick={() => setFilterStatus(key)}
+            className={clsx(
+              "px-4 py-2 rounded-xl text-sm font-medium transition-all",
+              filterStatus === key
+                ? "bg-brand-600 text-white"
+                : "bg-dark-800 text-dark-300 hover:bg-dark-700",
+            )}
+          >
+            {config.label} ({orders.filter((o) => o.status === key).length})
+          </button>
+        ))}
       </div>
 
       {/* Search */}
       <div className="relative max-w-md">
-        <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-dark-400" />
-        <input type="text" value={search} onChange={e => setSearch(e.target.value)} className="input-field pl-11" placeholder="Buscar orden..." />
+        <Search
+          size={18}
+          className="absolute left-4 top-1/2 -translate-y-1/2 text-dark-400"
+        />
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="input-field pl-11"
+          placeholder="Buscar orden..."
+        />
       </div>
 
-      {/* Orders list */}
+      {/* List */}
       <div className="space-y-3">
-        {filtered.map(order => {
+        {filtered.map((order) => {
           const config = STATUS_CONFIG[order.status] || STATUS_CONFIG.open;
-          const StatusIcon = config.icon;
           return (
             <div
               key={order.id}
@@ -119,24 +242,24 @@ export default function OrdersPage() {
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
-                      <h3 className="font-bold text-white">Orden #{order.orderNumber}</h3>
+                      <h3 className="font-bold text-white">
+                        Orden #{order.orderNumber}
+                      </h3>
                       <span className={config.badge}>{config.label}</span>
                     </div>
                     <div className="flex items-center gap-3 text-xs text-dark-400 mt-1">
                       {order.tableName && <span>🪑 {order.tableName}</span>}
-                      {order.customerName && <span>👤 {order.customerName}</span>}
-                      {order.waiterName && <span>🧑‍🍳 {order.waiterName}</span>}
+                      {order.customerName && (
+                        <span>👤 {order.customerName}</span>
+                      )}
                       <span>🕐 {formatTime(order.createdAt)}</span>
                     </div>
                   </div>
                 </div>
                 <div className="text-right">
-                  <p className="text-lg font-bold text-brand-400">{formatCurrency(order.total)}</p>
-                  {order.paymentMethod && (
-                    <p className="text-xs text-dark-400 capitalize mt-1">
-                      {order.paymentMethod === 'cash' ? '💵 Efectivo' : order.paymentMethod === 'card' ? '💳 Tarjeta' : '🔄 Mixto'}
-                    </p>
-                  )}
+                  <p className="text-lg font-bold text-brand-400">
+                    {formatCurrency(order.total)}
+                  </p>
                 </div>
               </div>
             </div>
@@ -144,66 +267,185 @@ export default function OrdersPage() {
         })}
       </div>
 
-      {/* Order Detail Modal */}
-      {selectedOrder && (
+      {/* Modal Detalle Orden */}
+      {selectedOrder && !showPayment && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="glass-panel w-full max-w-lg p-6 animate-scale-in max-h-[80vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl font-bold text-white">Orden #{selectedOrder.orderNumber}</h2>
-              <button onClick={() => setSelectedOrder(null)} className="text-dark-400 hover:text-white"><X size={20} /></button>
+              <h2 className="text-xl font-bold text-white">
+                Orden #{selectedOrder.orderNumber}
+              </h2>
+              <button
+                onClick={() => setSelectedOrder(null)}
+                className="text-dark-400 hover:text-white"
+              >
+                <X size={20} />
+              </button>
             </div>
 
             <div className="space-y-4">
-              <div className="flex gap-2 flex-wrap">
-                <span className={STATUS_CONFIG[selectedOrder.status]?.badge}>{STATUS_CONFIG[selectedOrder.status]?.label}</span>
-                {selectedOrder.tableName && <span className="badge-neutral">🪑 {selectedOrder.tableName}</span>}
-                {selectedOrder.customerName && <span className="badge-neutral">👤 {selectedOrder.customerName}</span>}
-              </div>
-
-              {selectedOrder.items.length > 0 && (
-                <div className="space-y-2">
-                  <h3 className="text-sm font-semibold text-dark-300">Productos</h3>
-                  {selectedOrder.items.map(item => (
-                    <div key={item.id} className="flex justify-between bg-dark-700/50 rounded-lg p-3">
-                      <div>
-                        <p className="text-sm font-medium text-white">{item.productName}</p>
-                        <p className="text-xs text-dark-400">x{item.quantity} @ {formatCurrency(item.unitPrice)}</p>
-                      </div>
-                      <p className="text-sm font-semibold text-white">{formatCurrency(item.total)}</p>
-                    </div>
-                  ))}
+              {/* Items List */}
+              {selectedOrder.items.map((item) => (
+                <div
+                  key={item.id}
+                  className="flex justify-between bg-dark-700/50 rounded-lg p-3"
+                >
+                  <div>
+                    <p className="text-sm font-medium text-white">
+                      {item.productName}
+                    </p>
+                    <p className="text-xs text-dark-400">
+                      x{item.quantity} @ {formatCurrency(item.unitPrice)}
+                    </p>
+                  </div>
+                  <p className="text-sm font-semibold text-white">
+                    {formatCurrency(item.unitPrice * item.quantity)}
+                  </p>
                 </div>
-              )}
+              ))}
 
               <div className="border-t border-dark-700 pt-4 space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-dark-400">Subtotal</span>
-                  <span className="text-white">{formatCurrency(selectedOrder.subtotal)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-dark-400">IVA</span>
-                  <span className="text-white">{formatCurrency(selectedOrder.taxAmount)}</span>
-                </div>
-                {selectedOrder.discountAmount > 0 && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-dark-400">Descuento</span>
-                    <span className="text-red-400">-{formatCurrency(selectedOrder.discountAmount)}</span>
-                  </div>
-                )}
-                {selectedOrder.tipAmount > 0 && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-dark-400">Propina</span>
-                    <span className="text-emerald-400">{formatCurrency(selectedOrder.tipAmount)}</span>
-                  </div>
-                )}
                 <div className="flex justify-between text-lg font-bold pt-2 border-t border-dark-600">
                   <span className="text-white">Total</span>
-                  <span className="text-brand-400">{formatCurrency(selectedOrder.total)}</span>
+                  <span className="text-brand-400">
+                    {formatCurrency(selectedOrder.total)}
+                  </span>
                 </div>
               </div>
             </div>
 
-            <button onClick={() => setSelectedOrder(null)} className="w-full btn-secondary mt-6">Cerrar</button>
+            <div className="flex gap-2 mt-6">
+              {selectedOrder.status === "open" && (
+                <button
+                  onClick={() =>
+                    updateOrderStatus(selectedOrder.id, "in_progress")
+                  }
+                  className="btn-warning"
+                >
+                  👨‍🍳 Cocina
+                </button>
+              )}
+              {selectedOrder.status === "in_progress" && (
+                <button
+                  onClick={() =>
+                    updateOrderStatus(selectedOrder.id, "delivered")
+                  }
+                  className="btn-info"
+                >
+                  🍽️ Entregado
+                </button>
+              )}
+              {selectedOrder.status !== "paid" && (
+                <button
+                  onClick={() => setShowPayment(true)}
+                  className="w-full btn-success"
+                >
+                  💵 Cobrar
+                </button>
+              )}
+              {selectedOrder.status === "open" ? (
+                <button
+                  onClick={() => {
+                    if (confirm("¿Deseas cancelar esta orden abierta?")) {
+                      updateOrderStatus(selectedOrder.id, "cancelled");
+                      setSelectedOrder(null);
+                    }
+                  }}
+                  className="w-full bg-red-600/20 hover:bg-red-600/40 text-red-500 font-bold py-2 px-4 rounded-xl transition-all"
+                >
+                  Cancelar Orden
+                </button>
+              ) : (
+                <button
+                  onClick={() => setSelectedOrder(null)}
+                  className="w-full btn-secondary"
+                >
+                  Cerrar
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Procesar Pago */}
+      {showPayment && selectedOrder && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <div className="glass-panel w-full max-w-md p-6 animate-scale-in">
+            <h2 className="text-xl font-bold text-white mb-4 text-center">
+              Procesar Pago
+            </h2>
+            <p className="text-center text-3xl font-bold text-brand-400 mb-6">
+              {formatCurrency(selectedOrder.total)}
+            </p>
+
+            <div className="flex gap-2 mb-6">
+              <button
+                onClick={() => setPaymentMethod("cash")}
+                className={clsx(
+                  "flex-1 py-3 rounded-xl font-bold transition-all",
+                  paymentMethod === "cash"
+                    ? "bg-brand-600 text-white"
+                    : "bg-dark-700 text-dark-400",
+                )}
+              >
+                💵 Efectivo
+              </button>
+              <button
+                onClick={() => setPaymentMethod("card")}
+                className={clsx(
+                  "flex-1 py-3 rounded-xl font-bold transition-all",
+                  paymentMethod === "card"
+                    ? "bg-brand-600 text-white"
+                    : "bg-dark-700 text-dark-400",
+                )}
+              >
+                💳 Tarjeta
+              </button>
+            </div>
+
+            {paymentMethod === "cash" && (
+              <div className="space-y-4 mb-6">
+                <input
+                  type="number"
+                  value={cashReceived}
+                  onChange={(e) => setCashReceived(e.target.value)}
+                  className="input-field text-center text-xl h-14"
+                  placeholder="Efectivo recibido"
+                  autoFocus
+                />
+                {cashReceived && (
+                  <div className="bg-green-500/10 border border-green-500/20 p-3 rounded-xl text-center">
+                    <p className="text-sm text-green-400 uppercase font-bold tracking-wider">
+                      Cambio a devolver
+                    </p>
+                    <p className="text-2xl font-bold text-green-400">
+                      {formatCurrency(
+                        parseFloat(cashReceived) - selectedOrder.total,
+                      )}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <button
+                onClick={handleConfirmPayment}
+                className="btn-success w-full h-12 text-lg"
+              >
+                Confirmar Pago
+              </button>
+              <button
+                onClick={() => {
+                  setShowPayment(false);
+                  setCashReceived("");
+                }}
+                className="btn-secondary w-full h-12"
+              >
+                Cancelar
+              </button>
+            </div>
           </div>
         </div>
       )}

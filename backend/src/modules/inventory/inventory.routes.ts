@@ -1,17 +1,26 @@
-import { Router } from 'express';
-import { InventoryController } from './inventory.controller';
-import { authenticate } from '../../middleware/auth';
-import { authorize } from '../../middleware/roles';
+import { Router } from "express";
+import { InventoryController } from "./inventory.controller";
+import { authenticate } from "../../middleware/auth";
+import { authorize } from "../../middleware/roles";
 
 const router = Router();
 const controller = new InventoryController();
 
+// Todas las rutas de inventario requieren token válido
 router.use(authenticate);
 
-router.get('/', (req, res) => controller.getAll(req, res));
-router.get('/low-stock', (req, res) => controller.getLowStock(req, res));
-router.post('/:id/restock', authorize('admin', 'manager'), (req, res) => controller.restock(req, res));
-router.post('/:id/adjust', authorize('admin', 'manager'), (req, res) => controller.adjust(req, res));
-router.get('/:id/movements', (req, res) => controller.getMovements(req, res));
+// Consultas de Stock (Lectura)
+router.get("/", (req, res) => controller.getAll(req, res));
+router.get("/low-stock", (req, res) => controller.getLowStock(req, res));
+router.get("/:id/movements", (req, res) => controller.getMovements(req, res));
+
+// Operaciones de Inventario (Escritura - Solo Admin/Manager)
+router.post("/:id/restock", authorize("admin", "manager"), (req, res) =>
+  controller.restock(req, res),
+);
+
+router.post("/:id/adjust", authorize("admin", "manager"), (req, res) =>
+  controller.adjust(req, res),
+);
 
 export default router;

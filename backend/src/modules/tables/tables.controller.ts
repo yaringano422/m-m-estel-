@@ -1,16 +1,17 @@
-import { Response } from 'express';
-import { AuthRequest } from '../../middleware/auth';
-import { TablesService } from './tables.service';
+import { Response } from "express";
+import { AuthRequest } from "../../middleware/auth";
+import { TablesService } from "./tables.service";
 
 const service = new TablesService();
 
 export class TablesController {
   async getAll(req: AuthRequest, res: Response): Promise<void> {
     try {
-      const tables = await service.getAll(req.user!.branchId);
+      const tables = await service.getAll((req.user as any).branchId);
       res.json(tables);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
+      console.error("ERROR REAL EN EL BACKEND:", error);
     }
   }
 

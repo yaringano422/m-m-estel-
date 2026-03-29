@@ -1,15 +1,15 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useAuthStore } from '../store/authStore';
-import { ChefHat, Eye, EyeOff, ArrowRight } from 'lucide-react';
-import toast from 'react-hot-toast';
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuthStore } from "../store/authStore";
+import { ChefHat, Eye, EyeOff, ArrowRight } from "lucide-react";
+import toast from "react-hot-toast";
 
 export default function LoginPage() {
-  const [email, setEmail] = useState('admin@restaurant.com');
-  const [password, setPassword] = useState('admin123');
+  const [email, setEmail] = useState("admin@restaurant.com");
+  const [password, setPassword] = useState("admin123");
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const login = useAuthStore(s => s.login);
+  const login = useAuthStore((s) => s.login);
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -17,10 +17,11 @@ export default function LoginPage() {
     setIsLoading(true);
     try {
       await login(email, password);
-      toast.success('¡Bienvenido!');
-      navigate('/dashboard');
+      toast.success("¡Bienvenido!");
+      navigate("/dashboard");
     } catch (error: any) {
-      toast.error(error.response?.data?.error || 'Credenciales inválidas');
+      console.error(error);
+      toast.error(error.message || "Credenciales inválidas");
     } finally {
       setIsLoading(false);
     }
@@ -37,7 +38,8 @@ export default function LoginPage() {
           </div>
           <h1 className="text-4xl font-bold text-white mb-4">RestaurantPOS</h1>
           <p className="text-dark-300 text-lg leading-relaxed">
-            Sistema profesional de punto de venta para restaurantes. Gestiona ventas, mesas, inventario y más.
+            Sistema profesional de punto de venta para restaurantes. Gestiona
+            ventas, mesas, inventario y más.
           </p>
           <div className="mt-12 grid grid-cols-3 gap-6 text-center">
             <div>
@@ -46,7 +48,9 @@ export default function LoginPage() {
             </div>
             <div>
               <div className="text-2xl font-bold text-purple-400">50K+</div>
-              <div className="text-xs text-dark-400 mt-1">Transacciones/día</div>
+              <div className="text-xs text-dark-400 mt-1">
+                Transacciones/día
+              </div>
             </div>
             <div>
               <div className="text-2xl font-bold text-emerald-400">99.9%</div>
@@ -67,15 +71,19 @@ export default function LoginPage() {
           </div>
 
           <h2 className="text-2xl font-bold text-white mb-2">Iniciar Sesión</h2>
-          <p className="text-dark-400 mb-8">Ingresa tus credenciales para acceder al sistema</p>
+          <p className="text-dark-400 mb-8">
+            Ingresa tus credenciales para acceder al sistema
+          </p>
 
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
-              <label className="block text-sm font-medium text-dark-300 mb-2">Email</label>
+              <label className="block text-sm font-medium text-dark-300 mb-2">
+                Email
+              </label>
               <input
                 type="email"
                 value={email}
-                onChange={e => setEmail(e.target.value)}
+                onChange={(e) => setEmail(e.target.value)}
                 className="input-field"
                 placeholder="correo@restaurante.com"
                 required
@@ -83,12 +91,14 @@ export default function LoginPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-dark-300 mb-2">Contraseña</label>
+              <label className="block text-sm font-medium text-dark-300 mb-2">
+                Contraseña
+              </label>
               <div className="relative">
                 <input
-                  type={showPassword ? 'text' : 'password'}
+                  type={showPassword ? "text" : "password"}
                   value={password}
-                  onChange={e => setPassword(e.target.value)}
+                  onChange={(e) => setPassword(e.target.value)}
                   className="input-field pr-12"
                   placeholder="••••••••"
                   required
@@ -120,7 +130,9 @@ export default function LoginPage() {
           </form>
 
           <div className="mt-8 p-4 bg-dark-800/50 rounded-xl border border-dark-700/50">
-            <p className="text-xs text-dark-400 mb-2 font-medium">Demo credentials:</p>
+            <p className="text-xs text-dark-400 mb-2 font-medium">
+              Demo credentials:
+            </p>
             <div className="space-y-1 text-xs text-dark-300">
               <p>Admin: admin@restaurant.com / admin123</p>
               <p>Cajero: cajero@restaurant.com / cashier123</p>

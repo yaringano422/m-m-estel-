@@ -1,6 +1,6 @@
-import { Response } from 'express';
-import { AuthRequest } from '../../middleware/auth';
-import { InventoryService } from './inventory.service';
+import { Response } from "express";
+import { AuthRequest } from "../../middleware/auth";
+import { InventoryService } from "./inventory.service";
 
 const service = new InventoryService();
 
@@ -25,7 +25,13 @@ export class InventoryController {
 
   async restock(req: AuthRequest, res: Response): Promise<void> {
     try {
-      const result = await service.restock(req.params.id, req.user!.id, req.body);
+      // CORRECCIÓN: Ahora pasamos 4 argumentos: id, userId, branchId, y el body
+      const result = await service.restock(
+        req.params.id,
+        req.user!.id,
+        req.user!.branchId,
+        req.body,
+      );
       res.json(result);
     } catch (error: any) {
       res.status(400).json({ error: error.message });
@@ -34,7 +40,13 @@ export class InventoryController {
 
   async adjust(req: AuthRequest, res: Response): Promise<void> {
     try {
-      const result = await service.adjust(req.params.id, req.user!.id, req.body);
+      // Nota: Si decides aplicar seguridad de branchId en adjust,
+      // recuerda añadir req.user!.branchId aquí también.
+      const result = await service.adjust(
+        req.params.id,
+        req.user!.id,
+        req.body,
+      );
       res.json(result);
     } catch (error: any) {
       res.status(400).json({ error: error.message });

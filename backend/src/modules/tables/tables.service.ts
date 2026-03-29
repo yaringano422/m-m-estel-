@@ -1,7 +1,12 @@
-import { query } from '../../config/database';
+import { query } from "../../config/database";
 
 export class TablesService {
   async getAll(branchId: string) {
+    console.log("Consultando mesas para la sucursal:", branchId);
+
+    if (!branchId || branchId === "undefined") {
+      throw new Error("El branchId llegó vacío al servicio de mesas");
+    }
     const result = await query(
       `SELECT t.*,
         o.id as current_order_id, o.order_number as current_order_number,
@@ -12,9 +17,9 @@ export class TablesService {
        LEFT JOIN users u ON u.id = o.user_id
        WHERE t.branch_id = $1 AND t.is_active = true
        ORDER BY t.zone, t.number`,
-      [branchId]
+      [branchId],
     );
-    return result.rows.map(t => ({
+    return result.rows.map((t) => ({
       id: t.id,
       number: t.number,
       name: t.name,
@@ -23,13 +28,19 @@ export class TablesService {
       zone: t.zone,
       positionX: parseFloat(t.position_x),
       positionY: parseFloat(t.position_y),
-      currentOrder: t.current_order_id ? {
-        id: t.current_order_id,
-        orderNumber: t.current_order_number,
-        total: t.current_order_total ? parseFloat(t.current_order_total) : 0,
-        status: t.current_order_status,
-        waiterName: t.waiter_first_name ? `${t.waiter_first_name} ${t.waiter_last_name}` : null,
-      } : null,
+      currentOrder: t.current_order_id
+        ? {
+            id: t.current_order_id,
+            orderNumber: t.current_order_number,
+            total: t.current_order_total
+              ? parseFloat(t.current_order_total)
+              : 0,
+            status: t.current_order_status,
+            waiterName: t.waiter_first_name
+              ? `${t.waiter_first_name} ${t.waiter_last_name}`
+              : null,
+          }
+        : null,
     }));
   }
 
@@ -38,7 +49,15 @@ export class TablesService {
       `INSERT INTO restaurant_tables (branch_id, number, name, capacity, zone, position_x, position_y)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
-      [branchId, data.number, data.name, data.capacity || 4, data.zone, data.positionX || 0, data.positionY || 0]
+      [
+        branchId,
+        data.number,
+        data.name,
+        data.capacity || 4,
+        data.zone,
+        data.positionX || 0,
+        data.positionY || 0,
+      ],
     );
     return result.rows[0];
   }
@@ -49,8 +68,13 @@ export class TablesService {
     let idx = 1;
 
     const map: Record<string, string> = {
-      number: 'number', name: 'name', capacity: 'capacity',
-      status: 'status', zone: 'zone', positionX: 'position_x', positionY: 'position_y',
+      number: "number",
+      name: "name",
+      capacity: "capacity",
+      status: "status",
+      zone: "zone",
+      positionX: "position_x",
+      positionY: "position_y",
     };
 
     for (const [key, col] of Object.entries(map)) {
@@ -60,29 +84,32 @@ export class TablesService {
       }
     }
 
-    if (fields.length === 0) throw new Error('No fields to update');
+    if (fields.length === 0) throw new Error("No fields to update");
 
     values.push(id);
     const result = await query(
-      `UPDATE restaurant_tables SET ${fields.join(', ')} WHERE id = $${idx} RETURNING *`,
-      values
+      `UPDATE restaurant_tables SET ${fields.join(", ")} WHERE id = $${idx} RETURNING *`,
+      values,
     );
-    if (result.rows.length === 0) throw new Error('Table not found');
+    if (result.rows.length === 0) throw new Error("Table not found");
     return result.rows[0];
   }
 
   async updateStatus(id: string, status: string) {
     const result = await query(
       `UPDATE restaurant_tables SET status = $1 WHERE id = $2 RETURNING *`,
-      [status, id]
+      [status, id],
     );
-    if (result.rows.length === 0) throw new Error('Table not found');
+    if (result.rows.length === 0) throw new Error("Table not found");
     return result.rows[0];
   }
 
   async delete(id: string) {
-    const result = await query('UPDATE restaurant_tables SET is_active = false WHERE id = $1 RETURNING id', [id]);
-    if (result.rows.length === 0) throw new Error('Table not found');
-    return { message: 'Table deleted successfully' };
+    const result = await query(
+      "UPDATE restaurant_tables SET is_active = false WHERE id = $1 RETURNING id",
+      [id],
+    );
+    if (result.rows.length === 0) throw new Error("Table not found");
+    return { message: "Table deleted successfully" };
   }
 }

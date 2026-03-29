@@ -7,7 +7,7 @@ export interface User {
   email: string;
   firstName: string;
   lastName: string;
-  role: 'admin' | 'manager' | 'cashier' | 'waiter';
+  role: "admin" | "manager" | "cashier" | "waiter";
   branchId: string;
   avatarUrl?: string;
   isActive: boolean;
@@ -40,7 +40,7 @@ export interface Category {
 export interface ProductVariant {
   id: string;
   name: string;
-  type: 'size' | 'extra' | 'option';
+  type: "size" | "extra" | "option";
   priceModifier: number;
 }
 
@@ -60,7 +60,7 @@ export interface Product {
   variants: ProductVariant[];
 }
 
-export type TableStatus = 'available' | 'occupied' | 'reserved' | 'maintenance';
+export type TableStatus = "available" | "occupied" | "reserved" | "maintenance";
 
 export interface RestaurantTable {
   id: string;
@@ -80,8 +80,13 @@ export interface RestaurantTable {
   };
 }
 
-export type OrderStatus = 'open' | 'in_progress' | 'ready' | 'delivered' | 'paid' | 'cancelled';
-export type PaymentMethod = 'cash' | 'card' | 'mixed' | 'other';
+export type OrderStatus =
+  | "open"
+  | "in_progress"
+  | "delivered"
+  | "paid"
+  | "cancelled";
+export type PaymentMethod = "cash" | "card" | "mixed" | "other";
 
 export interface OrderItemVariant {
   id: string;
@@ -146,7 +151,7 @@ export interface InventoryItem {
 
 export interface InventoryMovement {
   id: string;
-  type: 'sale' | 'restock' | 'adjustment' | 'waste' | 'transfer';
+  type: "sale" | "restock" | "adjustment" | "waste" | "transfer";
   quantity: number;
   previousStock: number;
   newStock: number;
@@ -196,4 +201,23 @@ export interface AuthState {
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
   checkAuth: () => void;
+}
+// Kitchen types
+export interface KitchenOrder {
+  id: string;
+  status: OrderStatus;
+  created_at: string;
+
+  table?: {
+    name: string;
+  };
+
+  order_items: {
+    id: string;
+    quantity: number;
+
+    product?: {
+      name: string;
+    };
+  }[];
 }

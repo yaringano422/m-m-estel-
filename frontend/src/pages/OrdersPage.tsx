@@ -42,7 +42,7 @@ export default function OrdersPage() {
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [filterStatus]);
 
   const loadData = async () => {
     try {
@@ -375,9 +375,22 @@ export default function OrdersPage() {
             <h2 className="text-xl font-bold text-white mb-4 text-center">
               Procesar Pago
             </h2>
-            <p className="text-center text-3xl font-bold text-brand-400 mb-6">
-              {formatCurrency(selectedOrder.total)}
+
+            {/* MONTO DINÁMICO: Aquí se calcula el 5% extra solo si es tarjeta */}
+            <p className="text-center text-3xl font-bold text-brand-400 mb-2">
+              {paymentMethod === "card"
+                ? formatCurrency(selectedOrder.total * 1.05)
+                : formatCurrency(selectedOrder.total)}
             </p>
+
+            {/* AVISO VISUAL: Solo aparece cuando seleccionan tarjeta */}
+            <div className="h-6 mb-4 text-center">
+              {paymentMethod === "card" && (
+                <span className="text-xs text-dark-400 uppercase font-bold tracking-wider">
+                  (Incluye 5% de comisión por tarjeta)
+                </span>
+              )}
+            </div>
 
             <div className="flex gap-2 mb-6">
               <button
@@ -420,6 +433,7 @@ export default function OrdersPage() {
                       Cambio a devolver
                     </p>
                     <p className="text-2xl font-bold text-green-400">
+                      {/* Aquí calculamos el vuelto siempre sobre el total base (ya que estamos en efectivo) */}
                       {formatCurrency(
                         parseFloat(cashReceived) - selectedOrder.total,
                       )}

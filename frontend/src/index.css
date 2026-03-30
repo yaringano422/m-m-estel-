@@ -9,7 +9,7 @@
 
   body {
     @apply bg-dark-950 text-dark-100;
-    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   }
 
   ::-webkit-scrollbar {
@@ -104,5 +104,10 @@
 
   .badge-neutral {
     @apply badge bg-dark-600 text-dark-300 border border-dark-500;
+  }
+  @media (max-width: 1024px) {
+    .overflow-y-auto {
+      -webkit-overflow-scrolling: touch;
+    }
   }
 }

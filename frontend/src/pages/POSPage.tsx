@@ -32,7 +32,9 @@ export default function POSPage() {
   const [tables, setTables] = useState<any[]>([]);
   const cart = useCartStore();
 
-  // Simulación de usuario actual (reemplázalo con tu hook de autenticación real si lo tienes)
+  // NUEVO: Estado para abrir/cerrar el carrito en celulares
+  const [showMobileCart, setShowMobileCart] = useState(false);
+
   const currentUser = { id: "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a22" };
 
   useEffect(() => {
@@ -136,8 +138,9 @@ export default function POSPage() {
     return matchesCategory && matchesSearch && p.isAvailable;
   });
 
+  // Renderizador de moneda local
   const formatCurrency = (n: number) =>
-    `$${n.toLocaleString("es-MX", { minimumFractionDigits: 2 })}`;
+    `S/ ${n.toLocaleString("es-PE", { minimumFractionDigits: 2 })}`;
 
   const handleAddToCart = (product: Product) => {
     cart.addItem({
@@ -146,6 +149,10 @@ export default function POSPage() {
       price: product.price,
       taxRate: product.taxRate,
       variants: [],
+    });
+    toast.success(`${product.name} agregado`, {
+      duration: 1000,
+      position: "bottom-center",
     });
   };
 
@@ -184,13 +191,17 @@ export default function POSPage() {
     });
   };
 
+  // NUEVO: Cálculos con comisión del 5% para Tarjeta
+  const baseTotal = cart.getTotal();
+  const cardFee = paymentMethod === "card" ? baseTotal * 0.05 : 0;
+  const finalTotal = baseTotal + cardFee;
+
   const handlePayment = async () => {
     if (cart.items.length === 0) return;
 
     try {
       const now = new Date().toISOString();
 
-      // 1. Crear ORDER
       const { data: order, error: orderError } = await supabase
         .from("orders")
         .insert([
@@ -203,13 +214,15 @@ export default function POSPage() {
             subtotal: cart.getSubtotal(),
             tax_amount: cart.getTaxAmount(),
             discount_amount: cart.discountAmount,
-            total: cart.getTotal(),
+            // NUEVO: Guardar el recargo por tarjeta si aplica
+            tip_amount: cardFee,
+            total: finalTotal,
             payment_method: paymentMethod,
             cash_received:
               paymentMethod === "cash" ? parseFloat(cashReceived) : null,
             change_amount:
               paymentMethod === "cash"
-                ? parseFloat(cashReceived) - cart.getTotal()
+                ? parseFloat(cashReceived) - finalTotal
                 : null,
             customer_name: cart.customerName || "Cliente",
             customer_count: cart.customerCount || 1,
@@ -222,7 +235,6 @@ export default function POSPage() {
 
       if (orderError) throw orderError;
 
-      // 2. Crear ORDER ITEMS
       const itemsToInsert = cart.items.map((item) => ({
         order_id: order.id,
         product_id: item.productId,
@@ -244,8 +256,6 @@ export default function POSPage() {
 
       if (itemsError) throw itemsError;
 
-      // 3. INVENTARIO + MOVIMIENTOS (Aquí inserté tu código)
-      // Usamos Promise.all para esperar a que todas las actualizaciones asíncronas terminen
       await Promise.all(
         cart.items.map(async (item) => {
           await registerInventoryMovement(
@@ -262,8 +272,9 @@ export default function POSPage() {
       cart.clearCart();
       setShowPayment(false);
       setCashReceived("");
+      setShowMobileCart(false);
     } catch (error: any) {
-      console.error("ERROR REAL 👉", error.message, error.details);
+      console.error("ERROR REAL 👉", error.message);
       toast.error("Error al registrar venta");
     }
   };
@@ -343,6 +354,7 @@ export default function POSPage() {
       cart.clearCart();
       setShowTableSelection(true);
       loadTables();
+      setShowMobileCart(false);
     } catch (error: any) {
       console.error("ERROR ENVIANDO ORDEN:", error.message);
       toast.error("Error al enviar orden");
@@ -351,12 +363,30 @@ export default function POSPage() {
 
   const changeAmount =
     paymentMethod === "cash" && cashReceived
-      ? parseFloat(cashReceived) - cart.getTotal()
+      ? parseFloat(cashReceived) - finalTotal
       : 0;
 
+  const totalItemsCount = cart.items.reduce(
+    (acc, item) => acc + item.quantity,
+    0,
+  );
+
   return (
-    <div className="flex flex-col lg:flex-row gap-4 h-[calc(100vh-7rem)] animate-fade-in relative">
-      {/* (Resto del JSX se mantiene exactamente igual que tu código original...) */}
+    <div className="flex flex-col lg:flex-row gap-4 h-[calc(100vh-7rem)] animate-fade-in relative overflow-hidden">
+      {/* Botón Flotante para Carrito en Celulares */}
+      {totalItemsCount > 0 && !showMobileCart && (
+        <button
+          onClick={() => setShowMobileCart(true)}
+          className="lg:hidden fixed bottom-4 right-4 z-50 bg-brand-600 text-white p-4 rounded-full shadow-2xl flex items-center gap-2 animate-bounce-slow"
+        >
+          <ShoppingBag size={24} />
+          <span className="font-bold bg-white text-brand-600 rounded-full w-6 h-6 flex items-center justify-center text-xs">
+            {totalItemsCount}
+          </span>
+        </button>
+      )}
+
+      {/* Area de Productos */}
       <div className="flex-1 flex flex-col min-w-0">
         <div className="mb-4 space-y-3">
           <div className="relative">
@@ -410,7 +440,7 @@ export default function POSPage() {
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 xl:grid-cols-4 gap-3 content-start">
+        <div className="h-[60vh] lg:h-auto flex-1 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 xl:grid-cols-4 gap-3 content-start no-scrollbar-thumb">
           {filteredProducts.map((product) => (
             <button
               key={product.id}
@@ -443,21 +473,22 @@ export default function POSPage() {
         </div>
       </div>
 
+      {/* Barra lateral de Orden Actual (Visible siempre en PC, toggleable en móvil) */}
       <div
         className={clsx(
-          "fixed inset-y-0 right-0 z-40 lg:relative lg:inset-auto lg:z-0 lg:flex",
-          "w-full max-w-xs sm:w-80 xl:w-96 glass-panel flex flex-col shrink-0 transition-transform duration-300 ease-in-out",
-          cart.items.length === 0
-            ? "translate-x-full lg:translate-x-0"
-            : "translate-x-0",
+          "fixed inset-0 z-50 lg:relative lg:inset-auto lg:z-0 lg:flex", // Comportamiento base
+          "w-full max-w-none lg:w-80 xl:w-96 glass-panel flex flex-col shrink-0 transition-transform duration-300 ease-in-out bg-dark-900 lg:bg-transparent",
+          showMobileCart
+            ? "translate-x-0"
+            : "translate-x-full lg:translate-x-0",
         )}
       >
-        <div className="p-4 border-b border-dark-700">
-          <div className="flex items-center justify-between">
-            <h2 className="font-bold text-white flex items-center gap-2">
-              <ShoppingBag size={18} className="text-brand-400" />
-              Orden Actual
-            </h2>
+        <div className="p-4 border-b border-dark-700 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <ShoppingBag size={18} className="text-brand-400" />
+            <h2 className="font-bold text-white">Orden Actual</h2>
+          </div>
+          <div className="flex items-center gap-4">
             {cart.items.length > 0 && (
               <button
                 onClick={cart.clearCart}
@@ -466,6 +497,13 @@ export default function POSPage() {
                 Limpiar
               </button>
             )}
+            {/* Botón para cerrar el carrito en móviles */}
+            <button
+              onClick={() => setShowMobileCart(false)}
+              className="lg:hidden text-dark-400 hover:text-white"
+            >
+              <X size={20} />
+            </button>
           </div>
         </div>
 
@@ -524,7 +562,7 @@ export default function POSPage() {
         </div>
 
         {cart.items.length > 0 && (
-          <div className="p-4 border-t border-dark-700 space-y-3 bg-dark-900/90 lg:bg-transparent">
+          <div className="p-4 border-t border-dark-700 space-y-3 bg-dark-900/90">
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
                 <span className="text-dark-400">Subtotal</span>
@@ -539,15 +577,6 @@ export default function POSPage() {
                   {formatCurrency(cart.getTaxAmount())}
                 </span>
               </div>
-
-              {cart.discountAmount > 0 && (
-                <div className="flex justify-between text-sm">
-                  <span className="text-dark-400">Descuento</span>
-                  <span className="text-red-400">
-                    -{formatCurrency(cart.discountAmount)}
-                  </span>
-                </div>
-              )}
 
               <div className="flex justify-between text-lg font-bold pt-2 border-t border-dark-600">
                 <span className="text-white">Total</span>
@@ -577,6 +606,7 @@ export default function POSPage() {
         )}
       </div>
 
+      {/* Modal de Pago */}
       {showPayment && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="glass-panel w-full max-w-md p-6 animate-scale-in">
@@ -593,8 +623,13 @@ export default function POSPage() {
             <div className="text-center mb-6">
               <p className="text-dark-400 text-sm">Total a cobrar</p>
               <p className="text-3xl sm:text-4xl font-bold text-brand-400 mt-1">
-                {formatCurrency(cart.getTotal())}
+                {formatCurrency(finalTotal)}
               </p>
+              {paymentMethod === "card" && (
+                <p className="text-xs text-brand-300 mt-1">
+                  Incluye comisión del 5% por pago con tarjeta.
+                </p>
+              )}
             </div>
 
             <div className="grid grid-cols-3 gap-3 mb-6">
@@ -629,7 +664,7 @@ export default function POSPage() {
                   value={cashReceived}
                   onChange={(e) => setCashReceived(e.target.value)}
                   className="input-field text-xl sm:text-2xl text-center font-bold"
-                  placeholder="$0.00"
+                  placeholder="S/ 0.00"
                   autoFocus
                 />
                 {cashReceived && changeAmount >= 0 && (
@@ -640,22 +675,6 @@ export default function POSPage() {
                     </p>
                   </div>
                 )}
-
-                <div className="grid grid-cols-4 gap-2 mt-3">
-                  {[50, 100, 200, 500].map((amount) => (
-                    <button
-                      key={amount}
-                      onClick={() =>
-                        setCashReceived(
-                          String(Math.ceil(cart.getTotal() / amount) * amount),
-                        )
-                      }
-                      className="py-2 bg-dark-700 hover:bg-dark-600 rounded-lg text-xs sm:text-sm font-medium text-dark-200 transition-colors"
-                    >
-                      ${amount}
-                    </button>
-                  ))}
-                </div>
               </div>
             )}
 
@@ -663,7 +682,7 @@ export default function POSPage() {
               onClick={handlePayment}
               disabled={
                 paymentMethod === "cash" &&
-                (!cashReceived || parseFloat(cashReceived) < cart.getTotal())
+                (!cashReceived || parseFloat(cashReceived) < finalTotal)
               }
               className="w-full btn-success py-3 text-base flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >

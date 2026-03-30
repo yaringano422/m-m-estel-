@@ -93,34 +93,41 @@ export const useCartStore = create<CartState>((set, get) => ({
     }),
 
   getSubtotal: () => {
-    return get().items.reduce((sum, item) => {
+    const totalConIgv = get().items.reduce((sum, item) => {
       const variantExtra = item.variants.reduce(
         (v, vr) => v + vr.priceModifier,
         0,
       );
-      const itemTotal = (item.price + variantExtra) * item.quantity;
-
-      // ✅ quitar IGV del total
-      return sum + itemTotal / (1 + item.taxRate / 100);
+      return sum + (item.price + variantExtra) * item.quantity;
     }, 0);
+
+    // El subtotal real es el Total entre 1.18
+    return totalConIgv / 1.18;
   },
 
   getTaxAmount: () => {
-    return get().items.reduce((sum, item) => {
+    const totalConIgv = get().items.reduce((sum, item) => {
       const variantExtra = item.variants.reduce(
         (v, vr) => v + vr.priceModifier,
         0,
       );
-      const itemTotal = (item.price + variantExtra) * item.quantity;
-
-      const subtotal = itemTotal / (1 + item.taxRate / 100);
-
-      // ✅ IGV real (no recalculado encima)
-      return sum + (itemTotal - subtotal);
+      return sum + (item.price + variantExtra) * item.quantity;
     }, 0);
+
+    const subtotal = totalConIgv / 1.18;
+    // El IGV es la diferencia exacta
+    return totalConIgv - subtotal;
   },
 
   getTotal: () => {
-    return get().getSubtotal() + get().getTaxAmount() - get().discountAmount;
+    const totalConIgv = get().items.reduce((sum, item) => {
+      const variantExtra = item.variants.reduce(
+        (v, vr) => v + vr.priceModifier,
+        0,
+      );
+      return sum + (item.price + variantExtra) * item.quantity;
+    }, 0);
+
+    return totalConIgv - get().discountAmount;
   },
 }));

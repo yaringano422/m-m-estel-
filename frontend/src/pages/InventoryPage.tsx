@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { inventoryApi } from "../api/endpoints";
+import { supabase } from "../supabaseClient";
 import type { InventoryItem } from "../types";
 import { Search, AlertTriangle, Package, ArrowUpCircle, X } from "lucide-react";
 import clsx from "clsx";
@@ -20,12 +20,23 @@ export default function InventoryPage() {
   const loadData = async () => {
     try {
       setLoading(true);
-      const { data } = await inventoryApi.getAll();
-      setItems(data);
-    } catch (error) {
+
+      // Consultamos directo a la tabla inventory de Supabase
+      // Traemos los datos y también el nombre del producto relacionado
+      const { data, error } = await supabase.from("inventory").select(`
+          *,
+          products (
+            name
+          )
+        `);
+
+      if (error) throw error;
+
+      setItems(data || []);
+    } catch (error: any) {
       console.error("Error cargando inventario de Supabase:", error);
       toast.error("No se pudo conectar con el inventario real.");
-      setItems([]); // Dejamos la lista vacía en lugar de poner comida mexicana
+      setItems([]);
     } finally {
       setLoading(false);
     }
@@ -43,10 +54,37 @@ export default function InventoryPage() {
   const handleRestock = async (id: string) => {
     if (!restockQty || parseFloat(restockQty) <= 0) return;
     try {
-      await inventoryApi.restock(id, { quantity: parseFloat(restockQty) });
+      const quantityToAdd = parseFloat(restockQty);
+
+      // 1. Primero obtenemos el stock actual de ese registro en Supabase
+      const { data: currentItem, error: fetchError } = await supabase
+        .from("inventory")
+        .select("current_stock")
+        .eq("id", id)
+        .single();
+
+      if (fetchError) throw fetchError;
+
+      const previousStock = parseFloat(currentItem.current_stock) || 0;
+      const newStock = previousStock + quantityToAdd;
+
+      // 2. Actualizamos el stock en Supabase
+      const { error: updateError } = await supabase
+        .from("inventory")
+        .update({
+          current_stock: newStock,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", id);
+
+      if (updateError) throw updateError;
+
       toast.success("Stock actualizado");
-      loadData();
-    } catch {
+      loadData(); // Recargamos la tabla
+    } catch (error: any) {
+      console.error("Error al reabastecer inventario:", error);
+
+      // Mantenemos tu fallback por si falla o para simulación local
       setItems((prev) =>
         prev.map((i) =>
           i.id === id

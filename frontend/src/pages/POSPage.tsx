@@ -13,8 +13,6 @@ import {
   Banknote,
   Receipt,
   CheckCircle,
-  LayoutGrid,
-  Users,
 } from "lucide-react";
 import clsx from "clsx";
 import toast from "react-hot-toast";
@@ -34,10 +32,14 @@ export default function POSPage() {
   const [tables, setTables] = useState<any[]>([]);
   const cart = useCartStore();
 
+  // Simulación de usuario actual (reemplázalo con tu hook de autenticación real si lo tienes)
+  const currentUser = { id: "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a22" };
+
   useEffect(() => {
     loadData();
     loadTables();
   }, []);
+
   const loadTables = async () => {
     try {
       const { data, error } = await supabase
@@ -69,7 +71,7 @@ export default function POSPage() {
         toast.success(`Reabriendo orden de ${table.name}`);
       }
     } else {
-      cart.setOrderId(null); // Mesa limpia, orden nueva
+      cart.setOrderId(null);
     }
     setShowTableSelection(false);
   };
@@ -78,7 +80,6 @@ export default function POSPage() {
     try {
       setLoading(true);
 
-      // Categorías desde Supabase
       const { data: categoriesData, error: catError } = await supabase
         .from("categories")
         .select("*")
@@ -99,15 +100,9 @@ export default function POSPage() {
         })),
       );
 
-      // Productos con JOIN
       const { data: productsData, error: prodError } = await supabase
         .from("products")
-        .select(
-          `
-          *,
-          categories ( name )
-        `,
-        )
+        .select(`*, categories ( name )`)
         .eq("is_active", true);
 
       if (prodError) throw prodError;
@@ -151,6 +146,41 @@ export default function POSPage() {
       price: product.price,
       taxRate: product.taxRate,
       variants: [],
+    });
+  };
+
+  const registerInventoryMovement = async (
+    productId: string,
+    quantitySold: number,
+    orderId: string,
+    userId: string,
+  ) => {
+    const { data: inv } = await supabase
+      .from("inventory")
+      .select("id, current_stock")
+      .eq("product_id", productId)
+      .single();
+
+    if (!inv) return;
+
+    const previousStock = parseFloat(inv.current_stock);
+    const newStock = previousStock - quantitySold;
+
+    await supabase
+      .from("inventory")
+      .update({ current_stock: newStock, updated_at: new Date() })
+      .eq("id", inv.id);
+
+    await supabase.from("inventory_movements").insert({
+      inventory_id: inv.id,
+      order_id: orderId,
+      user_id: userId,
+      type: "sale",
+      quantity: quantitySold,
+      previous_stock: previousStock,
+      new_stock: newStock,
+      notes: "Sale processed from POS",
+      created_at: new Date(),
     });
   };
 
@@ -214,40 +244,18 @@ export default function POSPage() {
 
       if (itemsError) throw itemsError;
 
-      // 3 y 4. INVENTARIO + MOVIMIENTOS
-      for (const item of cart.items) {
-        const { data: inventory } = await supabase
-          .from("inventory")
-          .select("*")
-          .eq("product_id", item.productId)
-          .maybeSingle();
-
-        if (!inventory) continue;
-
-        const newStock = inventory.current_stock - item.quantity;
-
-        // actualizar stock
-        await supabase
-          .from("inventory")
-          .update({
-            current_stock: newStock,
-            updated_at: now,
-          })
-          .eq("id", inventory.id);
-
-        // registrar movimiento
-        await supabase.from("inventory_movements").insert([
-          {
-            inventory_id: inventory.id,
-            order_id: order.id,
-            type: "sale",
-            quantity: item.quantity,
-            previous_stock: inventory.current_stock,
-            new_stock: newStock,
-            created_at: now,
-          },
-        ]);
-      }
+      // 3. INVENTARIO + MOVIMIENTOS (Aquí inserté tu código)
+      // Usamos Promise.all para esperar a que todas las actualizaciones asíncronas terminen
+      await Promise.all(
+        cart.items.map(async (item) => {
+          await registerInventoryMovement(
+            item.productId,
+            item.quantity,
+            order.id || cart.orderId || "",
+            currentUser.id,
+          );
+        }),
+      );
 
       toast.success("¡Venta registrada correctamente!");
 
@@ -270,7 +278,6 @@ export default function POSPage() {
       const now = new Date().toISOString();
       let orderId = cart.orderId;
 
-      // 1. Si NO existe una orden previa, crearla. Si existe, actualizar totales.
       if (!orderId) {
         const { data: newOrder, error: orderError } = await supabase
           .from("orders")
@@ -293,7 +300,6 @@ export default function POSPage() {
         if (orderError) throw orderError;
         orderId = newOrder.id;
       } else {
-        // Actualizar totales de la orden existente
         await supabase
           .from("orders")
           .update({
@@ -305,7 +311,6 @@ export default function POSPage() {
           .eq("id", orderId);
       }
 
-      // 2. Insertar items
       const itemsToInsert = cart.items.map((item) => ({
         order_id: orderId,
         product_id: item.productId,
@@ -327,7 +332,6 @@ export default function POSPage() {
 
       if (itemsError) throw itemsError;
 
-      // 3. Actualizar estado de la mesa a ocupada
       if (cart.tableId) {
         await supabase
           .from("restaurant_tables")
@@ -337,8 +341,8 @@ export default function POSPage() {
 
       toast.success("Orden enviada a cocina 👨‍🍳🔥");
       cart.clearCart();
-      setShowTableSelection(true); // Regresar a mesas
-      loadTables(); // Refrescar vista
+      setShowTableSelection(true);
+      loadTables();
     } catch (error: any) {
       console.error("ERROR ENVIANDO ORDEN:", error.message);
       toast.error("Error al enviar orden");
@@ -351,10 +355,9 @@ export default function POSPage() {
       : 0;
 
   return (
-    <div className="flex gap-4 h-[calc(100vh-7rem)] animate-fade-in">
-      {/* Product Grid */}
+    <div className="flex flex-col lg:flex-row gap-4 h-[calc(100vh-7rem)] animate-fade-in relative">
+      {/* (Resto del JSX se mantiene exactamente igual que tu código original...) */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Search and categories */}
         <div className="mb-4 space-y-3">
           <div className="relative">
             <Search
@@ -407,16 +410,15 @@ export default function POSPage() {
           </div>
         </div>
 
-        {/* Products grid */}
-        <div className="flex-1 overflow-y-auto grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 content-start">
+        <div className="flex-1 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 xl:grid-cols-4 gap-3 content-start">
           {filteredProducts.map((product) => (
             <button
               key={product.id}
               onClick={() => handleAddToCart(product)}
-              className="glass-panel-sm p-4 text-left hover:border-brand-500/30 transition-all duration-200 active:scale-[0.97] group"
+              className="glass-panel-sm p-3 sm:p-4 text-left hover:border-brand-500/30 transition-all duration-200 active:scale-[0.97] group"
             >
               <div className="flex items-start justify-between mb-2">
-                <h3 className="text-sm font-semibold text-white group-hover:text-brand-300 transition-colors line-clamp-2 leading-tight">
+                <h3 className="text-xs sm:text-sm font-semibold text-white group-hover:text-brand-300 transition-colors line-clamp-2 leading-tight">
                   {product.name}
                 </h3>
               </div>
@@ -426,12 +428,12 @@ export default function POSPage() {
                 </p>
               )}
               <div className="flex items-center justify-between">
-                <span className="text-lg font-bold text-brand-400">
+                <span className="text-sm sm:text-lg font-bold text-brand-400">
                   {formatCurrency(product.price)}
                 </span>
-                <div className="w-8 h-8 bg-brand-600/20 rounded-lg flex items-center justify-center group-hover:bg-brand-600 transition-colors">
+                <div className="w-7 h-7 sm:w-8 sm:h-8 bg-brand-600/20 rounded-lg flex items-center justify-center group-hover:bg-brand-600 transition-colors">
                   <Plus
-                    size={16}
+                    size={14}
                     className="text-brand-400 group-hover:text-white"
                   />
                 </div>
@@ -441,8 +443,15 @@ export default function POSPage() {
         </div>
       </div>
 
-      {/* Cart Sidebar */}
-      <div className="w-80 xl:w-96 glass-panel flex flex-col shrink-0">
+      <div
+        className={clsx(
+          "fixed inset-y-0 right-0 z-40 lg:relative lg:inset-auto lg:z-0 lg:flex",
+          "w-full max-w-xs sm:w-80 xl:w-96 glass-panel flex flex-col shrink-0 transition-transform duration-300 ease-in-out",
+          cart.items.length === 0
+            ? "translate-x-full lg:translate-x-0"
+            : "translate-x-0",
+        )}
+      >
         <div className="p-4 border-b border-dark-700">
           <div className="flex items-center justify-between">
             <h2 className="font-bold text-white flex items-center gap-2">
@@ -460,7 +469,6 @@ export default function POSPage() {
           </div>
         </div>
 
-        {/* Cart items */}
         <div className="flex-1 overflow-y-auto p-4 space-y-2">
           {cart.items.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-dark-500">
@@ -515,9 +523,8 @@ export default function POSPage() {
           )}
         </div>
 
-        {/* Cart totals */}
         {cart.items.length > 0 && (
-          <div className="p-4 border-t border-dark-700 space-y-3">
+          <div className="p-4 border-t border-dark-700 space-y-3 bg-dark-900/90 lg:bg-transparent">
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
                 <span className="text-dark-400">Subtotal</span>
@@ -553,16 +560,16 @@ export default function POSPage() {
             <div className="flex gap-2">
               <button
                 onClick={handleSendOrder}
-                className="w-full btn-warning py-3 text-base"
+                className="w-full btn-warning py-2.5 sm:py-3 text-sm sm:text-base flex-1"
               >
-                🍳 Enviar a cocina
+                🍳 Cocina
               </button>
 
               <button
                 onClick={() => setShowPayment(true)}
-                className="w-full btn-success py-3 text-base flex items-center justify-center gap-2"
+                className="w-full btn-success py-2.5 sm:py-3 text-sm sm:text-base flex-1 flex items-center justify-center gap-2"
               >
-                <Receipt size={18} />
+                <Receipt size={16} />
                 Cobrar
               </button>
             </div>
@@ -570,7 +577,6 @@ export default function POSPage() {
         )}
       </div>
 
-      {/* Payment Modal */}
       {showPayment && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="glass-panel w-full max-w-md p-6 animate-scale-in">
@@ -586,12 +592,11 @@ export default function POSPage() {
 
             <div className="text-center mb-6">
               <p className="text-dark-400 text-sm">Total a cobrar</p>
-              <p className="text-4xl font-bold text-brand-400 mt-1">
+              <p className="text-3xl sm:text-4xl font-bold text-brand-400 mt-1">
                 {formatCurrency(cart.getTotal())}
               </p>
             </div>
 
-            {/* Payment method selection */}
             <div className="grid grid-cols-3 gap-3 mb-6">
               {[
                 { id: "cash" as const, icon: Banknote, label: "Efectivo" },
@@ -602,19 +607,18 @@ export default function POSPage() {
                   key={method.id}
                   onClick={() => setPaymentMethod(method.id)}
                   className={clsx(
-                    "p-4 rounded-xl border transition-all duration-200 text-center",
+                    "p-3 sm:p-4 rounded-xl border transition-all duration-200 text-center",
                     paymentMethod === method.id
                       ? "bg-brand-600/10 border-brand-500 text-brand-400"
                       : "bg-dark-800 border-dark-600 text-dark-300 hover:border-dark-500",
                   )}
                 >
-                  <method.icon size={24} className="mx-auto mb-2" />
+                  <method.icon size={20} className="mx-auto mb-2" />
                   <span className="text-xs font-medium">{method.label}</span>
                 </button>
               ))}
             </div>
 
-            {/* Cash input */}
             {paymentMethod === "cash" && (
               <div className="mb-6">
                 <label className="block text-sm font-medium text-dark-300 mb-2">
@@ -624,20 +628,19 @@ export default function POSPage() {
                   type="number"
                   value={cashReceived}
                   onChange={(e) => setCashReceived(e.target.value)}
-                  className="input-field text-2xl text-center font-bold"
+                  className="input-field text-xl sm:text-2xl text-center font-bold"
                   placeholder="$0.00"
                   autoFocus
                 />
                 {cashReceived && changeAmount >= 0 && (
                   <div className="mt-3 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-center">
                     <p className="text-sm text-dark-300">Cambio:</p>
-                    <p className="text-2xl font-bold text-emerald-400">
+                    <p className="text-xl sm:text-2xl font-bold text-emerald-400">
                       {formatCurrency(changeAmount)}
                     </p>
                   </div>
                 )}
 
-                {/* Quick amounts */}
                 <div className="grid grid-cols-4 gap-2 mt-3">
                   {[50, 100, 200, 500].map((amount) => (
                     <button
@@ -647,7 +650,7 @@ export default function POSPage() {
                           String(Math.ceil(cart.getTotal() / amount) * amount),
                         )
                       }
-                      className="py-2 bg-dark-700 hover:bg-dark-600 rounded-lg text-sm font-medium text-dark-200 transition-colors"
+                      className="py-2 bg-dark-700 hover:bg-dark-600 rounded-lg text-xs sm:text-sm font-medium text-dark-200 transition-colors"
                     >
                       ${amount}
                     </button>

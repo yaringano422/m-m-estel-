@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { productsApi, categoriesApi } from "../api/endpoints";
+import { supabase } from "../supabaseClient";
 import type { Product, Category } from "../types";
 import { Plus, Search, Edit, Trash2, Package, X } from "lucide-react";
 import clsx from "clsx";
@@ -30,13 +30,19 @@ export default function ProductsPage() {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [p, c] = await Promise.all([
-        productsApi.getAll(),
-        categoriesApi.getAll(),
+
+      // Hacemos las dos consultas directo a Supabase en paralelo
+      const [productsRes, categoriesRes] = await Promise.all([
+        supabase.from("products").select("*"),
+        supabase.from("categories").select("*"),
       ]);
-      setProducts(p.data);
-      setCategories(c.data);
-    } catch (error) {
+
+      if (productsRes.error) throw productsRes.error;
+      if (categoriesRes.error) throw categoriesRes.error;
+
+      setProducts(productsRes.data || []);
+      setCategories(categoriesRes.data || []);
+    } catch (error: any) {
       console.error("Error cargando productos de Supabase:", error);
       toast.error("No se pudo conectar con los productos reales.");
       setProducts([]);
@@ -58,22 +64,34 @@ export default function ProductsPage() {
 
   const handleSave = async () => {
     try {
+      // Mapeamos los datos del formulario a la estructura de Supabase
       const data = {
         name: form.name,
         description: form.description,
-        categoryId: form.categoryId,
+        category_id: form.categoryId, // Cambiado a snake_case por estándar de DB
         price: parseFloat(form.price),
         cost: parseFloat(form.cost),
-        taxRate: parseFloat(form.taxRate),
+        tax_rate: parseFloat(form.taxRate), // Cambiado a snake_case
         sku: form.sku,
       };
+
       if (editId) {
-        await productsApi.update(editId, data);
+        // Actualizar en Supabase
+        const { error } = await supabase
+          .from("products")
+          .update(data)
+          .eq("id", editId);
+
+        if (error) throw error;
         toast.success("Producto actualizado");
       } else {
-        await productsApi.create(data);
+        // Crear en Supabase
+        const { error } = await supabase.from("products").insert(data);
+
+        if (error) throw error;
         toast.success("Producto creado");
       }
+
       setShowForm(false);
       setEditId(null);
       setForm({
@@ -86,7 +104,8 @@ export default function ProductsPage() {
         sku: "",
       });
       loadData();
-    } catch {
+    } catch (error: any) {
+      console.error("Error en operación de productos:", error);
       toast.success(
         editId ? "Producto actualizado (demo)" : "Producto creado (demo)",
       );
@@ -94,15 +113,16 @@ export default function ProductsPage() {
     }
   };
 
-  const handleEdit = (p: Product) => {
+  const handleEdit = (p: any) => {
+    // Cambiado a any o tu interfaz Product
     setEditId(p.id);
     setForm({
       name: p.name,
       description: p.description || "",
-      categoryId: p.categoryId,
+      categoryId: p.category_id || p.categoryId, // Soporta ambos casos
       price: String(p.price),
       cost: String(p.cost),
-      taxRate: String(p.taxRate),
+      taxRate: String(p.tax_rate || p.taxRate),
       sku: p.sku || "",
     });
     setShowForm(true);
@@ -111,10 +131,15 @@ export default function ProductsPage() {
   const handleDelete = async (id: string) => {
     if (!confirm("¿Eliminar este producto?")) return;
     try {
-      await productsApi.delete(id);
+      // Eliminar en Supabase
+      const { error } = await supabase.from("products").delete().eq("id", id);
+
+      if (error) throw error;
+
       toast.success("Producto eliminado");
       loadData();
-    } catch {
+    } catch (error: any) {
+      console.error("Error al eliminar producto:", error);
       toast.success("Producto eliminado (demo)");
       setProducts((prev) => prev.filter((p) => p.id !== id));
     }

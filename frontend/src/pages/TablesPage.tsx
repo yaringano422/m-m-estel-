@@ -74,10 +74,20 @@ export default function TablesPage() {
 
   const loadData = async () => {
     try {
-      const { data } = await tablesApi.getAll();
-      setTables(data);
+      setLoading(true); // Es buena práctica encender el cargando aquí
+
+      // Consultamos directo a Supabase
+      const { data, error } = await supabase
+        .from("restaurant_tables")
+        .select("*")
+        .order("number", { ascending: true });
+
+      if (error) throw error;
+
+      setTables(data || []);
     } catch (error) {
       console.error("Error cargando mesas reales:", error);
+      // Tu arreglo de respaldo por si falla...
       setTables([
         {
           id: "t1",
@@ -89,124 +99,16 @@ export default function TablesPage() {
           position_x: 1,
           position_y: 1,
         },
-        {
-          id: "t2",
-          number: 2,
-          name: "Mesa 2",
-          capacity: 4,
-          status: "occupied",
-          zone: "Interior",
-          position_x: 2,
-          position_y: 1,
-          currentOrder: {
-            id: "o1",
-            orderNumber: 42,
-            total: 680,
-            status: "in_progress",
-            waiterName: "Carlos López",
-          },
-        },
-        {
-          id: "t3",
-          number: 3,
-          name: "Mesa 3",
-          capacity: 2,
-          status: "available",
-          zone: "Interior",
-          position_x: 3,
-          position_y: 1,
-        },
-        {
-          id: "t4",
-          number: 4,
-          name: "Mesa 4",
-          capacity: 6,
-          status: "occupied",
-          zone: "Interior",
-          position_x: 1,
-          position_y: 2,
-          currentOrder: {
-            id: "o2",
-            orderNumber: 43,
-            total: 1250,
-            status: "delivered",
-            waiterName: "Carlos López",
-          },
-        },
-        {
-          id: "t5",
-          number: 5,
-          name: "Mesa 5",
-          capacity: 4,
-          status: "reserved",
-          zone: "Terraza",
-          position_x: 2,
-          position_y: 2,
-        },
-        {
-          id: "t6",
-          number: 6,
-          name: "Mesa 6",
-          capacity: 8,
-          status: "available",
-          zone: "Terraza",
-          position_x: 3,
-          position_y: 2,
-        },
-        {
-          id: "t7",
-          number: 7,
-          name: "Mesa 7",
-          capacity: 2,
-          status: "available",
-          zone: "Barra",
-          position_x: 1,
-          position_y: 3,
-        },
-        {
-          id: "t8",
-          number: 8,
-          name: "Mesa 8",
-          capacity: 2,
-          status: "occupied",
-          zone: "Barra",
-          position_x: 2,
-          position_y: 3,
-          currentOrder: {
-            id: "o3",
-            orderNumber: 44,
-            total: 340,
-            status: "open",
-            waiterName: "Maria García",
-          },
-        },
-        {
-          id: "t9",
-          number: 9,
-          name: "VIP 1",
-          capacity: 10,
-          status: "available",
-          zone: "VIP",
-          position_x: 3,
-          position_y: 3,
-        },
-        {
-          id: "t10",
-          number: 10,
-          name: "VIP 2",
-          capacity: 12,
-          status: "maintenance",
-          zone: "VIP",
-          position_x: 1,
-          position_y: 4,
-        },
+        // ... conservas el resto de tus objetos simulados
       ]);
     } finally {
       setLoading(false);
     }
   };
 
-  const zones = [...new Set(tables.map((t) => t.zone))];
+  const zones = Array.isArray(tables)
+    ? [...new Set(tables.map((t) => t.zone))]
+    : [];
   const filtered = tables.filter((t) => !filterZone || t.zone === filterZone);
 
   const handleStatusChange = async (id: string, status: string) => {
@@ -216,7 +118,6 @@ export default function TablesPage() {
       toast.success("Estado actualizado");
     } catch (error) {
       console.error("Error al actualizar estado:", error);
-      // Actualización optimista en caso de que falle la API real
       setTables((prev) =>
         prev.map((t) => (t.id === id ? { ...t, status: status as any } : t)),
       );
@@ -326,78 +227,80 @@ export default function TablesPage() {
 
       {/* Tables grid */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-        {filtered.map((table) => {
-          // Fallback por si la base de datos trae un estado desconocido
-          const config = STATUS_CONFIG[table.status] || STATUS_CONFIG.available;
-          return (
-            <div
-              key={table.id}
-              className={clsx(
-                "glass-panel-sm p-5 transition-all duration-200 hover:scale-[1.02] cursor-pointer border",
-                config.border,
-              )}
-            >
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="font-bold text-white">{table.name}</h3>
-                <div className={clsx("w-3 h-3 rounded-full", config.color)} />
-              </div>
-
-              <div className="flex items-center gap-3 mb-3 text-dark-400 text-xs">
-                <span className="flex items-center gap-1">
-                  <Users size={12} /> {table.capacity}
-                </span>
-                <span>{table.zone}</span>
-              </div>
-
+        {Array.isArray(filtered) &&
+          filtered.map((table) => {
+            const config =
+              STATUS_CONFIG[table.status] || STATUS_CONFIG.available;
+            return (
               <div
+                key={table.id}
                 className={clsx(
-                  "text-xs font-medium mb-3 px-2 py-1 rounded-lg inline-block",
-                  config.bg,
-                  config.text,
+                  "glass-panel-sm p-5 transition-all duration-200 hover:scale-[1.02] cursor-pointer border",
+                  config.border,
                 )}
               >
-                {config.label}
-              </div>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-bold text-white">{table.name}</h3>
+                  <div className={clsx("w-3 h-3 rounded-full", config.color)} />
+                </div>
 
-              {table.currentOrder && (
-                <div className="bg-dark-700/50 rounded-lg p-3 space-y-1 mb-3">
-                  <div className="flex items-center gap-1 text-xs text-dark-300">
-                    <Clock size={12} /> Orden #{table.currentOrder.orderNumber}
+                <div className="flex items-center gap-3 mb-3 text-dark-400 text-xs">
+                  <span className="flex items-center gap-1">
+                    <Users size={12} /> {table.capacity}
+                  </span>
+                  <span>{table.zone}</span>
+                </div>
+
+                <div
+                  className={clsx(
+                    "text-xs font-medium mb-3 px-2 py-1 rounded-lg inline-block",
+                    config.bg,
+                    config.text,
+                  )}
+                >
+                  {config.label}
+                </div>
+
+                {table.currentOrder && (
+                  <div className="bg-dark-700/50 rounded-lg p-3 space-y-1 mb-3">
+                    <div className="flex items-center gap-1 text-xs text-dark-300">
+                      <Clock size={12} /> Orden #
+                      {table.currentOrder.orderNumber}
+                    </div>
+                    <div className="flex items-center gap-1 text-sm font-semibold text-brand-400">
+                      <DollarSign size={14} />{" "}
+                      {formatCurrency(table.currentOrder.total)}
+                    </div>
+                    {table.currentOrder.waiterName && (
+                      <p className="text-xs text-dark-400">
+                        {table.currentOrder.waiterName}
+                      </p>
+                    )}
                   </div>
-                  <div className="flex items-center gap-1 text-sm font-semibold text-brand-400">
-                    <DollarSign size={14} />{" "}
-                    {formatCurrency(table.currentOrder.total)}
-                  </div>
-                  {table.currentOrder.waiterName && (
-                    <p className="text-xs text-dark-400">
-                      {table.currentOrder.waiterName}
-                    </p>
+                )}
+
+                {/* Quick status change */}
+                <div className="flex gap-1">
+                  {table.status !== "available" && (
+                    <button
+                      onClick={() => handleStatusChange(table.id, "available")}
+                      className="flex-1 text-xs py-1.5 bg-emerald-500/10 text-emerald-400 rounded-lg hover:bg-emerald-500/20 transition-colors"
+                    >
+                      Liberar
+                    </button>
+                  )}
+                  {table.status === "available" && (
+                    <button
+                      onClick={() => handleStatusChange(table.id, "reserved")}
+                      className="flex-1 text-xs py-1.5 bg-blue-500/10 text-blue-400 rounded-lg hover:bg-blue-500/20 transition-colors"
+                    >
+                      Reservar
+                    </button>
                   )}
                 </div>
-              )}
-
-              {/* Quick status change */}
-              <div className="flex gap-1">
-                {table.status !== "available" && (
-                  <button
-                    onClick={() => handleStatusChange(table.id, "available")}
-                    className="flex-1 text-xs py-1.5 bg-emerald-500/10 text-emerald-400 rounded-lg hover:bg-emerald-500/20 transition-colors"
-                  >
-                    Liberar
-                  </button>
-                )}
-                {table.status === "available" && (
-                  <button
-                    onClick={() => handleStatusChange(table.id, "reserved")}
-                    className="flex-1 text-xs py-1.5 bg-blue-500/10 text-blue-400 rounded-lg hover:bg-blue-500/20 transition-colors"
-                  >
-                    Reservar
-                  </button>
-                )}
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
       </div>
 
       {/* Create Form Modal */}

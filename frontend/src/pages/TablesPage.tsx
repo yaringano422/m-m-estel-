@@ -5,6 +5,7 @@ import { Plus, Users, Clock, DollarSign, X } from "lucide-react";
 import clsx from "clsx";
 import toast from "react-hot-toast";
 import { supabase } from "../supabaseClient";
+
 const STATUS_CONFIG = {
   available: {
     label: "Disponible",
@@ -56,18 +57,16 @@ export default function TablesPage() {
       .on(
         "postgres_changes",
         {
-          event: "*", // Escucha inserts, updates y deletes
+          event: "*",
           schema: "public",
-          table: "restaurant_tables", // <-- ¡REEMPLAZA ESTO CON EL NOMBRE EXACTO DE TU TABLA DE MESAS EN SUPABASE!
+          table: "restaurant_tables",
         },
         () => {
-          // Cada vez que ocurra un cambio, volvemos a llamar a la API para refrescar el estado
           loadData();
         },
       )
       .subscribe();
 
-    // C. Limpieza al desmontar el componente (evita fugas de memoria)
     return () => {
       supabase.removeChannel(tablesChannel);
     };
@@ -77,7 +76,8 @@ export default function TablesPage() {
     try {
       const { data } = await tablesApi.getAll();
       setTables(data);
-    } catch {
+    } catch (error) {
+      console.error("Error cargando mesas reales:", error);
       setTables([
         {
           id: "t1",
@@ -86,8 +86,8 @@ export default function TablesPage() {
           capacity: 4,
           status: "available",
           zone: "Interior",
-          positionX: 1,
-          positionY: 1,
+          position_x: 1,
+          position_y: 1,
         },
         {
           id: "t2",
@@ -96,8 +96,8 @@ export default function TablesPage() {
           capacity: 4,
           status: "occupied",
           zone: "Interior",
-          positionX: 2,
-          positionY: 1,
+          position_x: 2,
+          position_y: 1,
           currentOrder: {
             id: "o1",
             orderNumber: 42,
@@ -113,8 +113,8 @@ export default function TablesPage() {
           capacity: 2,
           status: "available",
           zone: "Interior",
-          positionX: 3,
-          positionY: 1,
+          position_x: 3,
+          position_y: 1,
         },
         {
           id: "t4",
@@ -123,8 +123,8 @@ export default function TablesPage() {
           capacity: 6,
           status: "occupied",
           zone: "Interior",
-          positionX: 1,
-          positionY: 2,
+          position_x: 1,
+          position_y: 2,
           currentOrder: {
             id: "o2",
             orderNumber: 43,
@@ -140,8 +140,8 @@ export default function TablesPage() {
           capacity: 4,
           status: "reserved",
           zone: "Terraza",
-          positionX: 2,
-          positionY: 2,
+          position_x: 2,
+          position_y: 2,
         },
         {
           id: "t6",
@@ -150,8 +150,8 @@ export default function TablesPage() {
           capacity: 8,
           status: "available",
           zone: "Terraza",
-          positionX: 3,
-          positionY: 2,
+          position_x: 3,
+          position_y: 2,
         },
         {
           id: "t7",
@@ -160,8 +160,8 @@ export default function TablesPage() {
           capacity: 2,
           status: "available",
           zone: "Barra",
-          positionX: 1,
-          positionY: 3,
+          position_x: 1,
+          position_y: 3,
         },
         {
           id: "t8",
@@ -170,8 +170,8 @@ export default function TablesPage() {
           capacity: 2,
           status: "occupied",
           zone: "Barra",
-          positionX: 2,
-          positionY: 3,
+          position_x: 2,
+          position_y: 3,
           currentOrder: {
             id: "o3",
             orderNumber: 44,
@@ -187,8 +187,8 @@ export default function TablesPage() {
           capacity: 10,
           status: "available",
           zone: "VIP",
-          positionX: 3,
-          positionY: 3,
+          position_x: 3,
+          position_y: 3,
         },
         {
           id: "t10",
@@ -197,8 +197,8 @@ export default function TablesPage() {
           capacity: 12,
           status: "maintenance",
           zone: "VIP",
-          positionX: 1,
-          positionY: 4,
+          position_x: 1,
+          position_y: 4,
         },
       ]);
     } finally {
@@ -213,12 +213,15 @@ export default function TablesPage() {
     try {
       await tablesApi.updateStatus(id, status);
       loadData();
-    } catch {
+      toast.success("Estado actualizado");
+    } catch (error) {
+      console.error("Error al actualizar estado:", error);
+      // Actualización optimista en caso de que falle la API real
       setTables((prev) =>
         prev.map((t) => (t.id === id ? { ...t, status: status as any } : t)),
       );
+      toast.success("Estado actualizado (demo)");
     }
-    toast.success("Estado actualizado");
   };
 
   const handleCreate = async () => {
@@ -227,7 +230,8 @@ export default function TablesPage() {
       toast.success("Mesa creada");
       setShowForm(false);
       loadData();
-    } catch {
+    } catch (error) {
+      console.error("Error al crear mesa:", error);
       toast.success("Mesa creada (demo)");
       setShowForm(false);
     }
@@ -323,7 +327,8 @@ export default function TablesPage() {
       {/* Tables grid */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
         {filtered.map((table) => {
-          const config = STATUS_CONFIG[table.status];
+          // Fallback por si la base de datos trae un estado desconocido
+          const config = STATUS_CONFIG[table.status] || STATUS_CONFIG.available;
           return (
             <div
               key={table.id}

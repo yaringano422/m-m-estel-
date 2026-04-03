@@ -4,7 +4,7 @@ import type { RestaurantTable } from "../types";
 import { Plus, Users, Clock, DollarSign, X } from "lucide-react";
 import clsx from "clsx";
 import toast from "react-hot-toast";
-
+import { supabase } from "../supabaseClient";
 const STATUS_CONFIG = {
   available: {
     label: "Disponible",
@@ -50,6 +50,27 @@ export default function TablesPage() {
 
   useEffect(() => {
     loadData();
+
+    const tablesChannel = supabase
+      .channel("realtime-tables")
+      .on(
+        "postgres_changes",
+        {
+          event: "*", // Escucha inserts, updates y deletes
+          schema: "public",
+          table: "restaurant_tables", // <-- ¡REEMPLAZA ESTO CON EL NOMBRE EXACTO DE TU TABLA DE MESAS EN SUPABASE!
+        },
+        () => {
+          // Cada vez que ocurra un cambio, volvemos a llamar a la API para refrescar el estado
+          loadData();
+        },
+      )
+      .subscribe();
+
+    // C. Limpieza al desmontar el componente (evita fugas de memoria)
+    return () => {
+      supabase.removeChannel(tablesChannel);
+    };
   }, []);
 
   const loadData = async () => {

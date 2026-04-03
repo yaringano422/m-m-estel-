@@ -1,6 +1,12 @@
 import { create } from "zustand";
 import type { CartItem } from "../types";
 
+export interface SelectedVariant {
+  variantId: string;
+  variantName: string;
+  priceModifier: number;
+}
+
 interface CartState {
   items: CartItem[];
   tableId: string | null;
@@ -13,6 +19,11 @@ interface CartState {
   removeItem: (productId: string) => void;
   updateQuantity: (productId: string, quantity: number) => void;
   updateNotes: (productId: string, notes: string) => void;
+  updateItemCustomization: (
+    productId: string,
+    newNotes: string,
+    newVariants: SelectedVariant[],
+  ) => void;
   setTable: (tableId: string | null) => void;
   setOrderId: (orderId: string | null) => void;
   setCustomer: (name: string, count?: number) => void;
@@ -75,6 +86,37 @@ export const useCartStore = create<CartState>((set, get) => ({
     }));
   },
 
+  updateItemCustomization: (productId, newNotes, newVariants) => {
+    set((state) => ({
+      items: state.items.map((item) => {
+        if (item.productId !== productId) return item;
+
+        // 1. Sumamos el valor de los nuevos modificadores (CamelCase)
+        const modifiersSum = newVariants.reduce(
+          (acc, v) => acc + (v.priceModifier || 0),
+          0,
+        );
+
+        // 2. Quitamos el precio de los modificadores anteriores para recuperar el precio base puro
+        const previousModifiersSum = item.variants.reduce(
+          (acc, v) => acc + (v.priceModifier || 0),
+          0,
+        );
+        const baseOriginalPrice = item.price - previousModifiersSum;
+
+        // 3. El nuevo precio unitario será el base puro + los nuevos modificadores
+        const newUnitPrice = baseOriginalPrice + modifiersSum;
+
+        return {
+          ...item,
+          notes: newNotes,
+          variants: newVariants, // Cumple estrictamente con CartItem
+          price: newUnitPrice, // Cumple estrictamente con CartItem
+        };
+      }),
+    }));
+  },
+
   setTable: (tableId) => set({ tableId }),
   setOrderId: (orderId) => set({ orderId }),
   setCustomer: (name, count) =>
@@ -93,15 +135,10 @@ export const useCartStore = create<CartState>((set, get) => ({
     }),
 
   getSubtotal: () => {
-    const totalConIgv = get().items.reduce((sum, item) => {
-      const variantExtra = item.variants.reduce(
-        (v, vr) => v + vr.priceModifier,
-        0,
-      );
-      return sum + (item.price + variantExtra) * item.quantity;
-    }, 0);
-
-    // El subtotal real es el Total entre 1.18
+    const totalConIgv = get().items.reduce(
+      (sum, item) => sum + item.price * item.quantity,
+      0,
+    );
     return totalConIgv / 1.18;
   },
 
@@ -115,7 +152,6 @@ export const useCartStore = create<CartState>((set, get) => ({
     }, 0);
 
     const subtotal = totalConIgv / 1.18;
-    // El IGV es la diferencia exacta
     return totalConIgv - subtotal;
   },
 

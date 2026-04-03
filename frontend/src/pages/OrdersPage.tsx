@@ -33,7 +33,7 @@ export default function OrdersPage() {
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Estados para el flujo de pago (Movidos al nivel superior)
+  // Estados para el flujo de pago
   const [showPayment, setShowPayment] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<"cash" | "card" | "mixed">(
     "cash",
@@ -53,32 +53,38 @@ export default function OrdersPage() {
 
       if (error) throw error;
 
-      const mapped = data.map((o: any) => ({
+      const mapped: Order[] = data.map((o: any) => ({
         id: o.id,
-        orderNumber: o.order_number,
+        branch_id: o.branch_id,
+        table_id: o.table_id,
+        user_id: o.user_id,
+        cashier_id: o.cashier_id,
+        order_number: o.order_number,
         status: o.status,
         subtotal: o.subtotal,
-        taxAmount: o.tax_amount,
-        discountAmount: o.discount_amount,
-        tipAmount: o.tip_amount || 0,
+        tax_amount: o.tax_amount,
+        discount_amount: o.discount_amount,
+        tip_amount: o.tip_amount || 0,
         total: o.total,
-        paymentMethod: o.payment_method,
-        customerName: o.customer_name,
-        customerCount: o.customer_count,
-        createdAt: o.created_at,
-        paidAt: o.paid_at,
+        payment_method: o.payment_method,
+        customer_name: o.customer_name,
+        customer_count: o.customer_count,
+        created_at: o.created_at,
+        paid_at: o.paid_at,
+        updated_at: o.updated_at,
+        table_name: o.table_name,
         items: (o.order_items || []).map((i: any) => ({
           id: i.id,
-          productId: i.product_id,
-          productName: i.product_name,
+          product_id: i.product_id,
+          product_name: i.product_name,
           quantity: i.quantity,
-          unitPrice: i.unit_price,
-          taxRate: i.tax_rate,
-          taxAmount: i.tax_amount,
+          unit_price: i.unit_price,
+          tax_rate: i.tax_rate,
+          tax_amount: i.tax_amount,
           subtotal: i.subtotal,
           total: i.total,
           status: i.status || "pending",
-          variants: [],
+          notes: i.notes || "",
         })),
       }));
 
@@ -96,8 +102,15 @@ export default function OrdersPage() {
     try {
       const now = new Date().toISOString();
       const received = parseFloat(cashReceived);
-      const change =
-        paymentMethod === "cash" ? received - selectedOrder.total : null;
+
+      // Detalle 2: Calculamos el total final dependiendo del método de pago
+      const finalTotal =
+        paymentMethod === "card"
+          ? selectedOrder.total * 1.05
+          : selectedOrder.total;
+
+      // Detalle 2: El vuelto siempre se calcula sobre el total final correspondiente
+      const change = paymentMethod === "cash" ? received - finalTotal : null;
 
       const { error } = await supabase
         .from("orders")
@@ -107,6 +120,7 @@ export default function OrdersPage() {
           cash_received: paymentMethod === "cash" ? received : null,
           change_amount: change,
           paid_at: now,
+          total: finalTotal, // Guardamos el precio final (con o sin comisión)
         })
         .eq("id", selectedOrder.id);
 
@@ -116,6 +130,7 @@ export default function OrdersPage() {
       setShowPayment(false);
       setSelectedOrder(null);
       setCashReceived("");
+      setPaymentMethod("cash"); // Resetear a efectivo por defecto
       loadData();
     } catch (err: any) {
       console.error(err.message);
@@ -143,7 +158,7 @@ export default function OrdersPage() {
   const filtered = orders.filter((o) => {
     const matchesSearch =
       !search ||
-      `#${o.orderNumber} ${o.customerName || ""} ${o.tableName || ""}`
+      `#${o.order_number} ${o.customer_name || ""} ${o.table_name || ""}`
         .toLowerCase()
         .includes(search.toLowerCase());
     const matchesStatus = !filterStatus || o.status === filterStatus;
@@ -158,6 +173,37 @@ export default function OrdersPage() {
       hour: "2-digit",
       minute: "2-digit",
     });
+
+  // 🗓️ Función para agrupar órdenes por fecha
+  const groupedOrders = filtered.reduce(
+    (groups: Record<string, Order[]>, order) => {
+      const date = new Date(order.created_at);
+      const today = new Date();
+      const yesterday = new Date();
+      yesterday.setDate(today.getDate() - 1);
+
+      let dateLabel = "";
+
+      if (date.toDateString() === today.toDateString()) {
+        dateLabel = "Hoy";
+      } else if (date.toDateString() === yesterday.toDateString()) {
+        dateLabel = "Ayer";
+      } else {
+        dateLabel = date.toLocaleDateString("es-MX", {
+          weekday: "long",
+          day: "numeric",
+          month: "long",
+        });
+      }
+
+      if (!groups[dateLabel]) {
+        groups[dateLabel] = [];
+      }
+      groups[dateLabel].push(order);
+      return groups;
+    },
+    {},
+  );
 
   if (loading) {
     return (
@@ -225,43 +271,63 @@ export default function OrdersPage() {
         />
       </div>
 
-      {/* List */}
-      <div className="space-y-3">
-        {filtered.map((order) => {
-          const config = STATUS_CONFIG[order.status] || STATUS_CONFIG.open;
+      {/* List agrupada por días */}
+      <div className="space-y-6">
+        {Object.entries(groupedOrders).map(([dateLabel, dayOrders]) => {
+          const dayTotal = dayOrders.reduce((acc, curr) => acc + curr.total, 0);
+
           return (
-            <div
-              key={order.id}
-              className="glass-panel-sm p-4 hover:border-dark-600 transition-all duration-200 cursor-pointer"
-              onClick={() => setSelectedOrder(order)}
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-dark-700 rounded-xl flex items-center justify-center">
-                    <Receipt size={20} className="text-dark-300" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-bold text-white">
-                        Orden #{order.orderNumber}
-                      </h3>
-                      <span className={config.badge}>{config.label}</span>
-                    </div>
-                    <div className="flex items-center gap-3 text-xs text-dark-400 mt-1">
-                      {order.tableName && <span>🪑 {order.tableName}</span>}
-                      {order.customerName && (
-                        <span>👤 {order.customerName}</span>
-                      )}
-                      <span>🕐 {formatTime(order.createdAt)}</span>
-                    </div>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <p className="text-lg font-bold text-brand-400">
-                    {formatCurrency(order.total)}
-                  </p>
-                </div>
+            <div key={dateLabel} className="space-y-3">
+              <div className="flex items-center justify-between border-b border-dark-700 pb-2 mt-4">
+                <h2 className="text-sm font-bold text-dark-400 uppercase tracking-wider">
+                  📅 {dateLabel}
+                </h2>
+                <span className="text-sm text-brand-400 font-semibold">
+                  Vendido: {formatCurrency(dayTotal)}
+                </span>
               </div>
+
+              {dayOrders.map((order) => {
+                const config =
+                  STATUS_CONFIG[order.status] || STATUS_CONFIG.open;
+                return (
+                  <div
+                    key={order.id}
+                    className="glass-panel-sm p-4 hover:border-dark-600 transition-all duration-200 cursor-pointer"
+                    onClick={() => setSelectedOrder(order)}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 bg-dark-700 rounded-xl flex items-center justify-center">
+                          <Receipt size={20} className="text-dark-300" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h3 className="font-bold text-white">
+                              Orden #{order.order_number}
+                            </h3>
+                            <span className={config.badge}>{config.label}</span>
+                          </div>
+                          <div className="flex items-center gap-3 text-xs text-dark-400 mt-1">
+                            {order.table_name && (
+                              <span>🪑 {order.table_name}</span>
+                            )}
+                            {order.customer_name && (
+                              <span>👤 {order.customer_name}</span>
+                            )}
+                            <span>🕐 {formatTime(order.created_at)}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-lg font-bold text-brand-400">
+                          {formatCurrency(order.total)}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           );
         })}
@@ -273,7 +339,7 @@ export default function OrdersPage() {
           <div className="glass-panel w-full max-w-lg p-6 animate-scale-in max-h-[80vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-xl font-bold text-white">
-                Orden #{selectedOrder.orderNumber}
+                Orden #{selectedOrder.order_number}
               </h2>
               <button
                 onClick={() => setSelectedOrder(null)}
@@ -284,7 +350,6 @@ export default function OrdersPage() {
             </div>
 
             <div className="space-y-4">
-              {/* Items List */}
               {selectedOrder.items.map((item) => (
                 <div
                   key={item.id}
@@ -292,14 +357,14 @@ export default function OrdersPage() {
                 >
                   <div>
                     <p className="text-sm font-medium text-white">
-                      {item.productName}
+                      {item.product_name}
                     </p>
                     <p className="text-xs text-dark-400">
-                      x{item.quantity} @ {formatCurrency(item.unitPrice)}
+                      x{item.quantity} @ {formatCurrency(item.unit_price)}
                     </p>
                   </div>
                   <p className="text-sm font-semibold text-white">
-                    {formatCurrency(item.unitPrice * item.quantity)}
+                    {formatCurrency(item.unit_price * item.quantity)}
                   </p>
                 </div>
               ))}
@@ -376,14 +441,12 @@ export default function OrdersPage() {
               Procesar Pago
             </h2>
 
-            {/* MONTO DINÁMICO: Aquí se calcula el 5% extra solo si es tarjeta */}
             <p className="text-center text-3xl font-bold text-brand-400 mb-2">
               {paymentMethod === "card"
                 ? formatCurrency(selectedOrder.total * 1.05)
                 : formatCurrency(selectedOrder.total)}
             </p>
 
-            {/* AVISO VISUAL: Solo aparece cuando seleccionan tarjeta */}
             <div className="h-6 mb-4 text-center">
               {paymentMethod === "card" && (
                 <span className="text-xs text-dark-400 uppercase font-bold tracking-wider">
@@ -427,15 +490,17 @@ export default function OrdersPage() {
                   placeholder="Efectivo recibido"
                   autoFocus
                 />
-                {cashReceived && (
+                {cashReceived && !isNaN(parseFloat(cashReceived)) && (
                   <div className="bg-green-500/10 border border-green-500/20 p-3 rounded-xl text-center">
                     <p className="text-sm text-green-400 uppercase font-bold tracking-wider">
                       Cambio a devolver
                     </p>
                     <p className="text-2xl font-bold text-green-400">
-                      {/* Aquí calculamos el vuelto siempre sobre el total base (ya que estamos en efectivo) */}
                       {formatCurrency(
-                        parseFloat(cashReceived) - selectedOrder.total,
+                        parseFloat(cashReceived) -
+                          ((paymentMethod as string) === "card"
+                            ? selectedOrder.total * 1.05
+                            : selectedOrder.total),
                       )}
                     </p>
                   </div>
@@ -454,6 +519,7 @@ export default function OrdersPage() {
                 onClick={() => {
                   setShowPayment(false);
                   setCashReceived("");
+                  setPaymentMethod("cash");
                 }}
                 className="btn-secondary w-full h-12"
               >

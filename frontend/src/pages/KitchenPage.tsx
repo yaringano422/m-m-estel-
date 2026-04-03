@@ -1,19 +1,41 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { supabase } from "../supabaseClient";
+import { KitchenOrder } from "../types"; // Importamos el tipo que mejoramos arriba
+import toast from "react-hot-toast";
 
 export default function KitchenPage() {
-  const [orders, setOrders] = useState<any[]>([]);
+  const [orders, setOrders] = useState<KitchenOrder[]>([]);
+  const [soundEnabled, setSoundEnabled] = useState(() => {
+    return localStorage.getItem("kitchenSoundEnabled") === "true";
+  });
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
+    // Inicializar el audio (recuerda poner el archivo alerta-cocina.mp3 en /public/sounds/)
+    audioRef.current = new Audio("/sounds/alerta-cocina.mp3");
+
     loadOrders();
 
-    // 🔥 tiempo real
+    // 🔥 Canal en tiempo real mejorado
     const channel = supabase
       .channel("orders-kitchen")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "orders" },
-        () => loadOrders(),
+        (payload) => {
+          // Si el evento fue una inserción (Orden Nueva), intentamos reproducir el sonido
+          if (payload.eventType === "INSERT") {
+            if (audioRef.current) {
+              audioRef.current.play().catch((error) => {
+                console.error("Error al reproducir sonido:", error);
+              });
+            }
+            toast.success("¡Nueva orden recibida!", { icon: "🔔" });
+          }
+
+          // En cualquier cambio (Insert, Update, Delete) recargamos los datos
+          loadOrders();
+        },
       )
       .subscribe();
 
@@ -32,14 +54,15 @@ export default function KitchenPage() {
         order_items (
           id,
           product_name,
-          quantity
+          quantity,
+          notes
         )
       `,
       )
       .in("status", ["open", "in_progress", "delivered"])
       .order("created_at", { ascending: true });
 
-    if (!error) setOrders(data);
+    if (!error) setOrders(data as unknown as KitchenOrder[]);
   };
 
   const updateStatus = async (id: string, status: string) => {
@@ -47,17 +70,56 @@ export default function KitchenPage() {
     loadOrders();
   };
 
+  // Función para ganarle la restricción al navegador
+  const enableAudio = () => {
+    if (audioRef.current) {
+      audioRef.current
+        .play()
+        .then(() => {
+          audioRef.current?.pause();
+          if (audioRef.current) audioRef.current.currentTime = 0;
+
+          // 🔥 GUARDAMOS EN LOCALSTORAGE
+          localStorage.setItem("kitchenSoundEnabled", "true");
+          setSoundEnabled(true);
+
+          toast.success("Sonido activado para el turno.");
+        })
+        .catch((err) => console.error("Error al activar audio:", err));
+    }
+  };
+
   return (
     <div className="p-6 bg-dark-900 min-h-screen">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-white">
-          Monitor de Cocina 👨‍🍳🔥
-        </h1>
-        <div className="flex gap-4 text-sm">
-          <span className="flex items-center gap-1 text-emerald-400">
-            ● {orders.length} Órdenes activas
-          </span>
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-white">
+            Monitor de Cocina 👨‍🍳🔥
+          </h1>
+          <div className="flex gap-4 text-sm mt-1">
+            <span className="flex items-center gap-1 text-emerald-400">
+              ● {orders.length} Órdenes activas
+            </span>
+          </div>
         </div>
+
+        {/* Botón de activación de sonido */}
+        {!soundEnabled ? (
+          <button
+            onClick={enableAudio}
+            className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-dark-900 font-bold rounded-lg transition-colors flex items-center gap-2 text-sm"
+          >
+            🔊 Activar Alertas de Sonido
+          </button>
+        ) : (
+          <div className="text-emerald-400 text-sm flex items-center gap-2 bg-emerald-500/10 px-4 py-2 rounded-lg border border-emerald-500/20">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+            </span>
+            Alertas de sonido listas
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -91,8 +153,7 @@ export default function KitchenPage() {
                       "Llevar"}
                   </h2>
                   <p className="text-xs text-dark-400 mt-1">
-                    Orden #{order.order_number}{" "}
-                    {/*TODO: agregar número de orden incremental real */}
+                    Orden #{order.order_number || "S/N"}
                   </p>
                 </div>
                 <div className="text-right">
@@ -117,19 +178,27 @@ export default function KitchenPage() {
 
               {/* Lista de Productos */}
               <div className="p-4 space-y-3 flex-1 min-h-[100px]">
-                {order.order_items.map((item: any) => (
+                {order.order_items.map((item) => (
                   <div
                     key={item.id}
-                    className="flex items-start justify-between border-b border-dark-700/50 pb-2 last:border-0"
+                    className="flex flex-col border-b border-dark-700/50 pb-2 last:border-0"
                   >
-                    <div className="flex gap-3 items-center">
-                      <span className="text-xl font-bold text-emerald-400 bg-emerald-500/10 w-8 h-8 flex items-center justify-center rounded-lg">
-                        {item.quantity}
-                      </span>
-                      <span className="text-white text-base font-medium">
-                        {item.product_name}
-                      </span>
+                    <div className="flex items-start justify-between">
+                      <div className="flex gap-3 items-center">
+                        <span className="text-xl font-bold text-emerald-400 bg-emerald-500/10 w-8 h-8 flex items-center justify-center rounded-lg">
+                          {item.quantity}
+                        </span>
+                        <span className="text-white text-base font-medium">
+                          {item.product_name}
+                        </span>
+                      </div>
                     </div>
+                    {/* Renderizamos las notas si existen (Preparamos Problema 3 y 5) */}
+                    {item.notes && (
+                      <p className="text-amber-400 text-sm mt-1 ml-11">
+                        📝 {item.notes}
+                      </p>
+                    )}
                   </div>
                 ))}
               </div>

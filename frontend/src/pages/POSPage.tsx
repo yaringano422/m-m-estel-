@@ -2,6 +2,8 @@ import { supabase } from "../supabaseClient";
 import { useEffect, useState } from "react";
 import { useCartStore } from "../store/cartStore";
 import type { Product, Category } from "../types";
+import ModalCustomization from "../components/ModalCustomization";
+import type { SelectedVariant } from "../store/cartStore";
 import {
   Search,
   Plus,
@@ -13,6 +15,7 @@ import {
   Banknote,
   Receipt,
   CheckCircle,
+  Settings2,
 } from "lucide-react";
 import clsx from "clsx";
 import toast from "react-hot-toast";
@@ -32,7 +35,16 @@ export default function POSPage() {
   const [tables, setTables] = useState<any[]>([]);
   const cart = useCartStore();
 
-  // NUEVO: Estado para abrir/cerrar el carrito en celulares
+  // 🔥 ESTADOS PARA EL MODAL DE PERSONALIZACIÓN
+  const [isCustomizationOpen, setIsCustomizationOpen] = useState(false);
+  const [itemToCustomize, setItemToCustomize] = useState<any>(null);
+  // Función para abrir el modal
+  const handleOpenCustomization = (item: any) => {
+    setItemToCustomize(item);
+    setIsCustomizationOpen(true);
+  };
+
+  // Estado para abrir/cerrar el carrito en celulares
   const [showMobileCart, setShowMobileCart] = useState(false);
 
   const currentUser = { id: "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a22" };
@@ -131,6 +143,175 @@ export default function POSPage() {
     }
   };
 
+  const handleSearchActiveOrder = async (searchTerm: string) => {
+    cart.setCustomer(searchTerm, cart.customerCount || 1);
+
+    if (searchTerm.length < 3) return;
+
+    try {
+      const { data: activeOrder, error } = await supabase
+        .from("orders")
+        .select("*")
+        .eq("customer_name", searchTerm)
+        .in("status", ["open", "in_progress"])
+        .maybeSingle();
+
+      if (error) throw error;
+
+      if (activeOrder) {
+        cart.setOrderId(activeOrder.id);
+        toast.success(`Reabriendo cuenta de: ${searchTerm}`);
+
+        const { data: previousItems, error: itemsError } = await supabase
+          .from("order_items")
+          .select("*")
+          .eq("order_id", activeOrder.id);
+
+        if (itemsError) throw itemsError;
+
+        cart.clearCart();
+        cart.setOrderId(activeOrder.id);
+        cart.setCustomer(searchTerm, activeOrder.customer_count || 1);
+
+        if (previousItems && previousItems.length > 0) {
+          previousItems.forEach((item: any) => {
+            cart.addItem({
+              productId: item.product_id,
+              productName: item.product_name,
+              price: item.unit_price,
+              taxRate: item.tax_rate,
+              variants: [],
+              // @ts-ignore
+              alreadySaved: true,
+            });
+            if (item.quantity > 1) {
+              cart.updateQuantity(item.product_id, item.quantity);
+            }
+          });
+        }
+      } else {
+        cart.setOrderId(null);
+      }
+    } catch (error) {
+      console.error("Error buscando orden activa:", error);
+    }
+  };
+
+  const handleSendToKitchen = async () => {
+    if (!cart.items || cart.items.length === 0) {
+      toast.error("El carrito está vacío");
+      return;
+    }
+
+    try {
+      const now = new Date().toISOString();
+      let orderId = cart.orderId;
+
+      if (!orderId) {
+        const { data: newOrder, error: orderError } = await supabase
+          .from("orders")
+          .insert([
+            {
+              branch_id: "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
+              table_id: cart.tableId,
+              customer_name: cart.customerName || "Cliente",
+              customer_count: cart.customerCount || 1,
+              status: "in_progress",
+              subtotal: cart.getSubtotal(),
+              tax_amount: cart.getTaxAmount(),
+              total: cart.getTotal(),
+              created_at: now,
+            },
+          ])
+          .select()
+          .single();
+
+        if (orderError) throw orderError;
+        orderId = newOrder.id;
+        cart.setOrderId(orderId);
+      }
+
+      const newItems = cart.items.filter((item: any) => !item.alreadySaved);
+
+      if (newItems.length === 0) {
+        toast("No hay productos nuevos para mandar a cocina", { icon: "ℹ️" });
+        return;
+      }
+
+      for (const item of newItems) {
+        const { data: insertedItem, error: itemError } = await supabase
+          .from("order_items")
+          .insert([
+            {
+              order_id: orderId,
+              product_id: item.productId,
+              product_name: item.productName,
+              quantity: item.quantity,
+              unit_price: item.price,
+              tax_rate: item.taxRate || 0,
+              tax_amount:
+                (item.price * item.quantity * (item.taxRate || 0)) / 100,
+              subtotal: item.price * item.quantity,
+              total:
+                item.price * item.quantity +
+                (item.price * item.quantity * (item.taxRate || 0)) / 100,
+              status: "pending",
+              created_at: now,
+              notes: item.notes || null,
+            },
+          ])
+          .select()
+          .single();
+
+        if (itemError) throw itemError;
+
+        if (item.variants && item.variants.length > 0) {
+          const variantsToInsert = item.variants.map((v: any) => ({
+            order_item_id: insertedItem.id,
+            variant_id: v.variantId,
+            variant_name: v.variantName,
+            price_modifier: v.priceModifier || 0,
+          }));
+
+          const { error: variantError } = await supabase
+            .from("order_item_variants")
+            .insert(variantsToInsert);
+
+          if (variantError) throw variantError;
+        }
+      }
+
+      if (cart.orderId) {
+        await supabase
+          .from("orders")
+          .update({
+            subtotal: cart.getSubtotal(),
+            tax_amount: cart.getTaxAmount(),
+            total: cart.getTotal(),
+            updated_at: now,
+          })
+          .eq("id", orderId);
+      }
+
+      if (cart.tableId) {
+        await supabase
+          .from("restaurant_tables")
+          .update({ status: "occupied" })
+          .eq("id", cart.tableId);
+      }
+
+      toast.success("¡Pedido enviado a cocina! 👨‍🍳🔥");
+
+      cart.clearCart();
+      setShowTableSelection(true);
+      loadTables();
+      setShowMobileCart(false);
+    } catch (error: any) {
+      console.error("ERROR ENVIANDO ORDEN:", error.message);
+      toast.error("Error al enviar orden");
+    }
+  };
+
   const filteredProducts = products.filter((p) => {
     const matchesCategory = !activeCategory || p.categoryId === activeCategory;
     const matchesSearch =
@@ -138,7 +319,6 @@ export default function POSPage() {
     return matchesCategory && matchesSearch && p.isAvailable;
   });
 
-  // Renderizador de moneda local
   const formatCurrency = (n: number) =>
     `S/ ${n.toLocaleString("es-PE", { minimumFractionDigits: 2 })}`;
 
@@ -191,7 +371,6 @@ export default function POSPage() {
     });
   };
 
-  // NUEVO: Cálculos con comisión del 5% para Tarjeta
   const baseTotal = cart.getTotal();
   const cardFee = paymentMethod === "card" ? baseTotal * 0.05 : 0;
   const finalTotal = baseTotal + cardFee;
@@ -214,7 +393,6 @@ export default function POSPage() {
             subtotal: cart.getSubtotal(),
             tax_amount: cart.getTaxAmount(),
             discount_amount: cart.discountAmount,
-            // NUEVO: Guardar el recargo por tarjeta si aplica
             tip_amount: cardFee,
             total: finalTotal,
             payment_method: paymentMethod,
@@ -248,6 +426,7 @@ export default function POSPage() {
           item.price * item.quantity +
           (item.price * item.quantity * item.taxRate) / 100,
         created_at: now,
+        notes: item.notes || null, // 👈 Respetando también las notas al cobrar
       }));
 
       const { error: itemsError } = await supabase
@@ -279,88 +458,6 @@ export default function POSPage() {
     }
   };
 
-  const handleSendOrder = async () => {
-    if (cart.items.length === 0) {
-      toast.error("Agrega productos primero");
-      return;
-    }
-
-    try {
-      const now = new Date().toISOString();
-      let orderId = cart.orderId;
-
-      if (!orderId) {
-        const { data: newOrder, error: orderError } = await supabase
-          .from("orders")
-          .insert([
-            {
-              branch_id: "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
-              table_id: cart.tableId,
-              status: "in_progress",
-              subtotal: cart.getSubtotal(),
-              tax_amount: cart.getTaxAmount(),
-              total: cart.getTotal(),
-              customer_name: cart.customerName || "Cliente",
-              customer_count: cart.customerCount || 1,
-              created_at: now,
-            },
-          ])
-          .select()
-          .single();
-
-        if (orderError) throw orderError;
-        orderId = newOrder.id;
-      } else {
-        await supabase
-          .from("orders")
-          .update({
-            subtotal: cart.getSubtotal(),
-            tax_amount: cart.getTaxAmount(),
-            total: cart.getTotal(),
-            updated_at: now,
-          })
-          .eq("id", orderId);
-      }
-
-      const itemsToInsert = cart.items.map((item) => ({
-        order_id: orderId,
-        product_id: item.productId,
-        product_name: item.productName,
-        quantity: item.quantity,
-        unit_price: item.price,
-        tax_rate: item.taxRate,
-        tax_amount: (item.price * item.quantity * item.taxRate) / 100,
-        subtotal: item.price * item.quantity,
-        total:
-          item.price * item.quantity +
-          (item.price * item.quantity * item.taxRate) / 100,
-        created_at: now,
-      }));
-      await supabase.from("order_items").delete().eq("order_id", orderId);
-      const { error: itemsError } = await supabase
-        .from("order_items")
-        .insert(itemsToInsert);
-
-      if (itemsError) throw itemsError;
-
-      if (cart.tableId) {
-        await supabase
-          .from("restaurant_tables")
-          .update({ status: "occupied" })
-          .eq("id", cart.tableId);
-      }
-
-      toast.success("Orden enviada a cocina 👨‍🍳🔥");
-      cart.clearCart();
-      setShowTableSelection(true);
-      loadTables();
-      setShowMobileCart(false);
-    } catch (error: any) {
-      console.error("ERROR ENVIANDO ORDEN:", error.message);
-      toast.error("Error al enviar orden");
-    }
-  };
-
   const changeAmount =
     paymentMethod === "cash" && cashReceived
       ? parseFloat(cashReceived) - finalTotal
@@ -373,7 +470,6 @@ export default function POSPage() {
 
   return (
     <div className="flex flex-col lg:flex-row gap-4 h-[calc(100vh-7rem)] animate-fade-in relative overflow-hidden">
-      {/* Botón Flotante para Carrito en Celulares */}
       {totalItemsCount > 0 && !showMobileCart && (
         <button
           onClick={() => setShowMobileCart(true)}
@@ -473,10 +569,10 @@ export default function POSPage() {
         </div>
       </div>
 
-      {/* Barra lateral de Orden Actual (Visible siempre en PC, toggleable en móvil) */}
+      {/* Barra lateral de Orden Actual */}
       <div
         className={clsx(
-          "fixed inset-0 z-50 lg:relative lg:inset-auto lg:z-0 lg:flex", // Comportamiento base
+          "fixed inset-0 z-50 lg:relative lg:inset-auto lg:z-0 lg:flex",
           "w-full max-w-none lg:w-80 xl:w-96 glass-panel flex flex-col shrink-0 transition-transform duration-300 ease-in-out bg-dark-900 lg:bg-transparent",
           showMobileCart
             ? "translate-x-0"
@@ -497,7 +593,6 @@ export default function POSPage() {
                 Limpiar
               </button>
             )}
-            {/* Botón para cerrar el carrito en móviles */}
             <button
               onClick={() => setShowMobileCart(false)}
               className="lg:hidden text-dark-400 hover:text-white"
@@ -508,35 +603,84 @@ export default function POSPage() {
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-2">
+          <div className="mb-3">
+            <input
+              type="text"
+              value={cart.customerName || ""}
+              onChange={(e) => handleSearchActiveOrder(e.target.value)}
+              className="w-full bg-dark-700 text-white text-sm px-3 py-2 rounded-lg border border-dark-600 focus:border-brand-500 outline-none"
+              placeholder="Escribe el nombre del cliente..."
+            />
+          </div>
           {cart.items.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-dark-500">
               <ShoppingBag size={48} className="mb-3 opacity-30" />
               <p className="text-sm">Agrega productos</p>
             </div>
           ) : (
-            cart.items.map((item) => (
+            cart.items.map((item: any) => (
               <div
                 key={item.productId}
-                className="bg-dark-700/50 rounded-xl p-3 animate-scale-in"
+                className={clsx(
+                  "rounded-xl p-3 animate-scale-in transition-colors",
+                  item.alreadySaved
+                    ? "bg-dark-800/40 opacity-75 border border-dark-700"
+                    : "bg-dark-700/50",
+                )}
               >
                 <div className="flex items-start justify-between mb-2">
-                  <h4 className="text-sm font-medium text-white flex-1 pr-2">
-                    {item.productName}
-                  </h4>
-                  <button
-                    onClick={() => cart.removeItem(item.productId)}
-                    className="text-dark-500 hover:text-red-400 transition-colors"
-                  >
-                    <Trash2 size={14} />
-                  </button>
+                  <div>
+                    <h4 className="text-sm font-medium text-white pr-2">
+                      {item.productName}
+                      {item.alreadySaved && (
+                        <span className="text-xs text-brand-400 ml-2">
+                          (Enviado)
+                        </span>
+                      )}
+                    </h4>
+                    {/* Visualizador de variantes agregadas */}
+                    {item.variants && item.variants.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {item.variants.map((v: any) => (
+                          <span
+                            key={v.variantId}
+                            className="text-xs bg-dark-600 text-brand-400 px-1.5 py-0.5 rounded"
+                          >
+                            +{v.variantName}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {/* Visualizador de notas */}
+                    {item.notes && (
+                      <p className="text-xs text-dark-400 mt-1 italic">
+                        "{item.notes}"
+                      </p>
+                    )}
+                  </div>
+                  {!item.alreadySaved && (
+                    <button
+                      onClick={() => cart.removeItem(item.productId)}
+                      className="text-dark-500 hover:text-red-400 transition-colors"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  )}
                 </div>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() =>
+                        !item.alreadySaved &&
                         cart.updateQuantity(item.productId, item.quantity - 1)
                       }
-                      className="w-7 h-7 bg-dark-600 hover:bg-dark-500 rounded-lg flex items-center justify-center transition-colors"
+                      className={clsx(
+                        "w-7 h-7 rounded-lg flex items-center justify-center transition-colors",
+                        item.alreadySaved
+                          ? "bg-dark-700 text-dark-600 cursor-not-allowed"
+                          : "bg-dark-600 hover:bg-dark-500",
+                      )}
+                      disabled={item.alreadySaved}
                     >
                       <Minus size={12} />
                     </button>
@@ -545,12 +689,30 @@ export default function POSPage() {
                     </span>
                     <button
                       onClick={() =>
+                        !item.alreadySaved &&
                         cart.updateQuantity(item.productId, item.quantity + 1)
                       }
-                      className="w-7 h-7 bg-dark-600 hover:bg-dark-500 rounded-lg flex items-center justify-center transition-colors"
+                      className={clsx(
+                        "w-7 h-7 rounded-lg flex items-center justify-center transition-colors",
+                        item.alreadySaved
+                          ? "bg-dark-700 text-dark-600 cursor-not-allowed"
+                          : "bg-dark-600 hover:bg-dark-500",
+                      )}
+                      disabled={item.alreadySaved}
                     >
                       <Plus size={12} />
                     </button>
+
+                    {/* 🔥 BOTÓN DE CONFIGURACIÓN DEL MODAL */}
+                    {!item.alreadySaved && (
+                      <button
+                        onClick={() => handleOpenCustomization(item)}
+                        className="w-7 h-7 bg-dark-600 hover:bg-dark-500 text-dark-300 hover:text-white rounded-lg flex items-center justify-center transition-colors ml-1"
+                        title="Personalizar producto"
+                      >
+                        <Settings2 size={13} />
+                      </button>
+                    )}
                   </div>
                   <span className="text-sm font-semibold text-brand-400">
                     {formatCurrency(item.price * item.quantity)}
@@ -588,7 +750,7 @@ export default function POSPage() {
 
             <div className="flex gap-2">
               <button
-                onClick={handleSendOrder}
+                onClick={handleSendToKitchen}
                 className="w-full btn-warning py-2.5 sm:py-3 text-sm sm:text-base flex-1"
               >
                 🍳 Cocina
@@ -691,6 +853,21 @@ export default function POSPage() {
             </button>
           </div>
         </div>
+      )}
+
+      {/* 🔥 RENDERIZADO DEL MODAL DE PERSONALIZACIÓN */}
+      {isCustomizationOpen && itemToCustomize && (
+        <ModalCustomization
+          isOpen={isCustomizationOpen}
+          onClose={() => {
+            setIsCustomizationOpen(false);
+            setItemToCustomize(null);
+          }}
+          item={itemToCustomize}
+          onSave={(itemId, newNotes, newVariants) => {
+            cart.updateItemCustomization(itemId, newNotes, newVariants);
+          }}
+        />
       )}
     </div>
   );

@@ -96,42 +96,44 @@ export interface OrderItemVariant {
 
 export interface OrderItem {
   id: string;
-  productId: string;
-  productName: string;
+  order_id: string; // Coincide con Supabase
+  product_id: string;
+  product_name: string;
   quantity: number;
-  unitPrice: number;
-  taxRate: number;
-  taxAmount: number;
+  unit_price: number;
+  tax_rate: number;
+  tax_amount: number;
   subtotal: number;
   total: number;
   notes?: string;
   status: string;
-  variants: OrderItemVariant[];
 }
 
 export interface Order {
   id: string;
-  orderNumber: number;
-  tableId?: string;
-  tableNumber?: number;
-  tableName?: string;
-  waiterId?: string;
-  waiterName?: string;
+  branch_id: string;
+  table_id?: string;
+  user_id?: string;
+  cashier_id?: string;
+  order_number: number;
   status: OrderStatus;
   subtotal: number;
-  taxAmount: number;
-  discountAmount: number;
-  tipAmount: number;
+  table_name?: string;
+  tax_amount: number;
+  discount_amount: number;
+  tip_amount: number;
   total: number;
-  paymentMethod?: PaymentMethod;
-  cashReceived?: number;
-  changeAmount?: number;
-  customerName?: string;
-  customerCount: number;
+  payment_method?: PaymentMethod;
+  payment_reference?: string;
+  cash_received?: number;
+  change_amount?: number;
   notes?: string;
+  customer_name?: string;
+  customer_count: number;
+  paid_at?: string;
+  created_at: string;
+  updated_at: string;
   items: OrderItem[];
-  createdAt: string;
-  paidAt?: string;
 }
 
 export interface InventoryItem {
@@ -206,18 +208,16 @@ export interface AuthState {
 export interface KitchenOrder {
   id: string;
   status: OrderStatus;
+  order_number?: number;
+  customer_name?: string;
   created_at: string;
-
-  table?: {
+  restaurant_tables?: {
     name: string;
-  };
-
+  } | null;
   order_items: {
     id: string;
+    product_name: string;
     quantity: number;
-
-    product?: {
-      name: string;
-    };
+    notes?: string;
   }[];
 }

@@ -69,8 +69,8 @@ export interface RestaurantTable {
   capacity: number;
   status: TableStatus;
   zone: string;
-  positionX: number;
-  positionY: number;
+  position_x: number;
+  position_y: number;
   currentOrder?: {
     id: string;
     orderNumber: number;

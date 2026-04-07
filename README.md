@@ -1,4 +1,4 @@
-# Sistema de Facturación Gastronómica - Recreo Turistico Mama Estelita - Chupaca - Junin
+# Sistema de Facturación Gastronómica - Recreo Turistico Mama Estelita - Chupaca - Junin - Peru
 
 Software de gestión operativa diseñado para automatizar el flujo de trabajo en restaurante de comida típica, desde la recepción del pedido hasta la facturación final.
 

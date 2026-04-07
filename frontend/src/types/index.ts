@@ -77,6 +77,7 @@ export interface RestaurantTable {
     total: number;
     status: string;
     waiterName?: string;
+    role?: string;
   };
 }
 

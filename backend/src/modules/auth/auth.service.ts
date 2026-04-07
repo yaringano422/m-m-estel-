@@ -59,7 +59,6 @@ export class AuthService {
   }
 
   async register(data: RegisterInput, branchId: string) {
-    // Check if user already exists
     const existing = await query("SELECT id FROM users WHERE email = $1", [
       data.email,
     ]);

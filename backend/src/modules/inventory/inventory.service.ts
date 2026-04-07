@@ -49,14 +49,12 @@ export class InventoryService {
     }));
   }
 
-  // Método Restock actualizado con validación de sucursal
   async restock(
     id: string,
     userId: string,
     branchId: string,
     data: { quantity: number; notes?: string },
   ) {
-    // Verificamos que el item pertenezca a la sucursal antes de operar
     const inv = await query(
       "SELECT current_stock FROM inventory WHERE id = $1 AND branch_id = $2",
       [id, branchId],
@@ -69,7 +67,6 @@ export class InventoryService {
     const previous = parseFloat(inv.rows[0].current_stock);
     const newStock = previous + data.quantity;
 
-    // Actualizamos stock y marcas de tiempo
     await query(
       `UPDATE inventory 
        SET current_stock = $1, last_restock_at = NOW(), updated_at = NOW() 
@@ -77,7 +74,6 @@ export class InventoryService {
       [newStock, id],
     );
 
-    // Registro del movimiento
     await query(
       `INSERT INTO inventory_movements (inventory_id, user_id, type, quantity, previous_stock, new_stock, notes)
        VALUES ($1, $2, 'restock', $3, $4, $5, $6)`,

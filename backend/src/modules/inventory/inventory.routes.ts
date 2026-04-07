@@ -6,15 +6,12 @@ import { authorize } from "../../middleware/roles";
 const router = Router();
 const controller = new InventoryController();
 
-// Todas las rutas de inventario requieren token válido
 router.use(authenticate);
 
-// Consultas de Stock (Lectura)
 router.get("/", (req, res) => controller.getAll(req, res));
 router.get("/low-stock", (req, res) => controller.getLowStock(req, res));
 router.get("/:id/movements", (req, res) => controller.getMovements(req, res));
 
-// Operaciones de Inventario (Escritura - Solo Admin/Manager)
 router.post("/:id/restock", authorize("admin", "manager"), (req, res) =>
   controller.restock(req, res),
 );

@@ -34,7 +34,6 @@ export const authenticate = async (
       return;
     }
 
-    // --- NUEVA LÓGICA: Buscar el branch_id en la tabla profiles ---
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
       .select("branch_id")
@@ -50,7 +49,7 @@ export const authenticate = async (
     req.user = {
       id: data.user.id,
       email: data.user.email || "",
-      branchId: profile.branch_id, // <--- Ahora sí viene de la base de datos
+      branchId: profile.branch_id,
     };
 
     next();
